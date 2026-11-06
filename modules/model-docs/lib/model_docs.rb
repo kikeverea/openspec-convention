@@ -1,5 +1,5 @@
 # Keeps the generated parts of the feature docs in sync with the models.
-# See AGENTS.md ("Features") and `bin/rails docs:models` / `docs:check`.
+# See CONVENTION.md ("Features") and `bin/rails docs:models` / `docs:check`.
 #
 # A feature owns a model by having openspec/specs/<feature>/models/<model>.md
 # (e.g. models/user.md) containing its marker block:

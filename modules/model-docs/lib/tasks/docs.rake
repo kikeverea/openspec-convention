@@ -6,7 +6,7 @@ namespace :docs do
     puts "Generated docs are up to date."
     if generator.problems.any?
       warn generator.problems.map { |problem| "  - #{problem}" }.join("\n")
-      abort "Model documentation has ownership problems (see AGENTS.md, \"Features\")."
+      abort "Model documentation has ownership problems (see CONVENTION.md, \"Features\")."
     end
   end
 
