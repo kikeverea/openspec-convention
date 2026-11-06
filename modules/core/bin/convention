@@ -8,19 +8,29 @@
 #   bin/convention sync [module ...]  # copy the source's files in (and adopt new modules)
 #   bin/convention diff [path ...]    # show how this project's copies differ from the source
 #   bin/convention upstream path ...  # copy files edited here back into the source
+#   bin/convention archive <change>   # archive an OpenSpec change and do the mechanical follow-up
 #
 # convention.lock records the adopted modules, the source commit and a hash of every copied
 # file, so `check` can tell the two kinds of drift apart:
 #   - edited here: a project changed its copy. Move the edit to the source (upstream), commit
 #     it there, then sync every project.
 #   - changed in the source: run `bin/convention sync`.
-# Where the source isn't checked out (CI, the server), `check` says so and passes.
+# Where the source isn't checked out (CI, the server), `check` says so and passes. The source is
+# found through CONVENTION_ROOT, else the project's untracked .convention file, else
+# ~/RubymineProjects/convention; when sync or upstream can't find it, ask the user where it is.
 require "digest"
 require "fileutils"
+require "pathname"
 require "yaml"
 
 module Convention
-  SOURCE = File.expand_path(ENV.fetch("CONVENTION_ROOT", "~/RubymineProjects/convention"))
+  # Where the source is on this computer: CONVENTION_ROOT, else the project's untracked
+  # .convention file (one line, the folder's path), else the default.
+  POINTER = ".convention"
+  SOURCE = File.expand_path(
+    ENV["CONVENTION_ROOT"] || (File.read(POINTER).strip if File.exist?(POINTER)).then { |path| path unless path&.empty? } ||
+      "~/RubymineProjects/convention"
+  )
   LOCK = "convention.lock"
   ALWAYS = %w[core].freeze
 
@@ -32,6 +42,7 @@ module Convention
     when "sync" then sync(args)
     when "diff" then diff(args)
     when "upstream" then upstream(args)
+    when "archive" then Archive.new(args).run
     else abort File.read(__FILE__)[/^# Keeps.*?(?=^# convention\.lock)/m].gsub(/^# ?/, "")
     end
   end
@@ -85,7 +96,7 @@ module Convention
   end
 
   def sync(modules)
-    abort "Convention source not found at #{SOURCE}." unless File.directory?(SOURCE)
+    abort "Convention source not found at #{SOURCE}: write its folder's path to #{POINTER}." unless File.directory?(SOURCE)
     abort "Run sync from a project's root, not from the source." if File.expand_path(Dir.pwd) == SOURCE
 
     adopted = (ALWAYS + (lock&.fetch("modules") || []) + modules).uniq
@@ -134,7 +145,7 @@ module Convention
   end
 
   def diff(paths)
-    abort "Convention source not found at #{SOURCE}." unless File.directory?(SOURCE)
+    abort "Convention source not found at #{SOURCE}: write its folder's path to #{POINTER}." unless File.directory?(SOURCE)
     files = source_files(lock ? lock["modules"] : available_modules)
     paths = drift.keys if paths.empty? && lock
     paths.each do |path|
@@ -144,7 +155,7 @@ module Convention
   end
 
   def upstream(paths)
-    abort "Convention source not found at #{SOURCE}." unless File.directory?(SOURCE)
+    abort "Convention source not found at #{SOURCE}: write its folder's path to #{POINTER}." unless File.directory?(SOURCE)
     abort "Name the files to copy back to the source." if paths.empty?
     files = source_files(lock ? lock["modules"] : available_modules)
     paths.each do |path|
@@ -182,6 +193,171 @@ module Convention
     commit = "uncommitted" if commit.empty?
     dirty = !`git -C #{SOURCE} status --porcelain -- modules 2>/dev/null`.strip.empty?
     dirty ? "#{commit}+uncommitted" : commit
+  end
+
+  # `bin/convention archive <change> [--skip-specs]`: runs `openspec archive`, then does the
+  # steps that need no judgment, and lists the ones that do.
+  #   - Working on lines in docs/backlog.md that link the change are removed, and so are the
+  #     bugs and cleanups they name (the change fixed them).
+  #   - Links into the change follow it to openspec/changes/archive/<date>-<change>/; a link to
+  #     its delta spec moves to the main spec it was merged into.
+  #   - Links inside the moved change are rebased, since it now sits one folder deeper.
+  #   - The checks run: openspec validate, docs:check, check-diagrams, check-links.
+  # Left to the agent, and printed: the limitations the change moved (update or remove them),
+  # and the change's diagrams that no feature's diagrams/ has a copy of.
+  class Archive
+    DOCS = [ "AGENTS.md", "openspec/**/*.md", "docs/**/*.md" ].freeze
+    LINK = /\]\(([^)\s]+)\)/
+    BACKLOG = "docs/backlog.md"
+    CHECKS = [
+      [ "openspec validate --specs --strict --no-interactive", -> { true } ],
+      [ "bin/rails docs:check", -> { File.exist?("lib/tasks/docs.rake") } ],
+      [ "bin/check-diagrams", -> { File.exist?("bin/check-diagrams") } ],
+      [ "bin/check-links", -> { File.exist?("bin/check-links") } ]
+    ].freeze
+
+    def initialize(args)
+      @flags = args.select { |arg| arg.start_with?("--") }
+      @name = (args - @flags).first or abort "Usage: bin/convention archive <change> [--skip-specs]"
+      @change = Pathname("openspec/changes/#{@name}")
+    end
+
+    def run
+      abort "No change at #{@change}." unless @change.directory?
+      uncopied = uncopied_diagrams
+      system("openspec", "archive", @name, "--yes", *(@flags & [ "--skip-specs" ])) or
+        abort "openspec archive failed; nothing else was changed."
+      archived = Dir.glob("openspec/changes/archive/*-#{@name}").max or
+        abort "openspec archive didn't leave #{@name} under openspec/changes/archive/."
+      @archived = Pathname(archived)
+
+      settled = settle_backlog
+      rewritten = rewrite_links
+      report(settled, rewritten, uncopied)
+      exit(checks ? 0 : 1)
+    end
+
+    private
+
+    # The flow, logic and lifecycle diagrams no feature's diagrams/ folder has a copy of.
+    def uncopied_diagrams
+      copied = Dir.glob("openspec/specs/**/diagrams/*.mmd").map { |path| File.basename(path) }
+      Dir.glob(@change.join("diagrams/*.mmd").to_s).map { |path| File.basename(path) }
+         .reject { |name| name == "data-model.mmd" || name == "files.mmd" || name.end_with?("-screen.mmd") }
+         .reject { |name| copied.include?(name) }.sort
+    end
+
+    # Removes the change's Working on lines, and the bugs and cleanups they name.
+    # Returns { limitations: [[title, link], ...], fixed: [title, ...] }.
+    def settle_backlog
+      settled = { limitations: [], fixed: [] }
+      return settled unless File.exist?(BACKLOG)
+
+      lines = File.readlines(BACKLOG)
+      section = nil
+      kept = lines.reject do |line|
+        section = Regexp.last_match(1) if line =~ /\A## (.+?)\s*\z/
+        next false unless section == "Working on" && line.include?("changes/#{@name}/")
+
+        if (item = line.match(/\A\s*[-*]\s+\[([^\]]+)\]\(([^)]+)\)/))
+          if item[2].match?(/\A#(bugs|cleanups)\z/)
+            settled[:fixed] << item[1]
+          else
+            settled[:limitations] << [ item[1], item[2] ]
+          end
+        end
+        true
+      end
+      section = nil
+      kept = kept.reject do |line|
+        section = Regexp.last_match(1) if line =~ /\A## (.+?)\s*\z/
+        %w[Bugs Cleanups].include?(section) &&
+          settled[:fixed].any? { |title| line.match?(/\A\s*[-*]\s+\*\*#{Regexp.escape(title)}\.?\*\*/) }
+      end
+      kept = note_empty_working_on(kept)
+      File.write(BACKLOG, kept.join) unless kept == lines
+      settled
+    end
+
+    def note_empty_working_on(lines)
+      start = lines.index { |line| line.strip == "## Working on" } or return lines
+      stop = lines.each_index.find { |i| i > start && lines[i].start_with?("## ") } || lines.size
+      return lines if lines[(start + 1)...stop].any? { |line| line.strip != "" }
+
+      lines[0..start] + [ "\n", "Nothing in progress.\n", "\n" ] + lines[stop..]
+    end
+
+    # Every relative link in the docs that pointed into the change now points into the archive
+    # (or, for its delta spec, to the main spec); links inside the moved change are rebased.
+    # Returns the files it rewrote.
+    def rewrite_links
+      root = Pathname.pwd
+      DOCS.flat_map { |glob| Dir.glob(glob) }.uniq.filter_map do |path|
+        file = Pathname(path)
+        inside = file.to_s.start_with?("#{@archived}/")
+        was = inside ? @change.join(file.relative_path_from(@archived)) : file
+        text = file.read
+        updated = text.gsub(LINK) do |match|
+          target = Regexp.last_match(1)
+          next match if target.match?(%r{\A(?:[a-z]+:|#|/)})
+
+          target_path, anchor = target.split("#", 2)
+          old = (root.join(was.dirname) + target_path).cleanpath.relative_path_from(root)
+          new = retarget(old, inside)
+          next match if new == old && !inside
+
+          relative = new.relative_path_from(file.dirname).to_s
+          relative += "/" if target_path.end_with?("/") && !relative.end_with?("/")
+          relative = "#{relative}##{anchor}" if anchor
+          "](#{relative})"
+        end
+        next if updated == text
+
+        file.write(updated)
+        path
+      end
+    end
+
+    def retarget(old, inside)
+      relative = old.to_s
+      prefix = "#{@change}/"
+      return old unless relative == @change.to_s || relative.start_with?(prefix)
+
+      rest = relative.delete_prefix(@change.to_s).delete_prefix("/")
+      if !inside && (spec = rest[%r{\Aspecs/(.+)/spec\.md\z}, 1]) && File.exist?("openspec/specs/#{spec}/spec.md")
+        return Pathname("openspec/specs/#{spec}/spec.md")
+      end
+
+      rest.empty? ? @archived : @archived.join(rest)
+    end
+
+    def report(settled, rewritten, uncopied)
+      puts "\nArchived to #{@archived}/."
+      puts "Removed the change's Working on lines from #{BACKLOG}." if settled.values.any?(&:any?)
+      settled[:fixed].each { |title| puts "  removed the fixed bug or cleanup \"#{title}\"" }
+      rewritten.each { |path| puts "  rewrote links in #{path}" }
+
+      todo = []
+      settled[:limitations].each do |title, link|
+        todo << "Update or remove the limitation \"#{title}\" (#{link.sub(%r{\A(\.\./)+}, "")}): the change moved it."
+      end
+      uncopied.each do |name|
+        todo << "#{@archived}/diagrams/#{name} has no copy in a feature's diagrams/: copy it if it shows how the feature now works, and link it from implementation.md."
+      end
+      return if todo.empty?
+
+      puts "\nLeft to you:"
+      todo.each { |line| puts "  - #{line}" }
+    end
+
+    def checks
+      puts
+      CHECKS.select { |_, applies| applies.call }.map do |command, _|
+        ok = system(command, out: File::NULL, err: File::NULL)
+        puts "  #{ok ? "passed" : "FAILED"}: #{command}"
+        ok
+      end.all?
+    end
   end
 end
 

@@ -45,6 +45,21 @@ artifacts:
       implementation details belong in design.md.
 
       This is the foundation - specs, design, and tasks all build on this.
+
+      Before writing, ask the user any question whose answer changes behavior.
+      Don't propose around a guess.
+
+      A fix the user asked to make a change stays small: a proposal, a delta
+      spec, tasks and the diagrams that apply (often just `files.mmd`), with
+      design.md only if a decision needs recording.
+
+      Backlog: for each limitation, bug or cleanup this change builds or
+      fixes, add a line under Working on in `docs/backlog.md`, the item's link
+      followed by the change: `- [<title>](<link>): [<change>](../openspec/changes/<change>/)`.
+      Move the item's line out of Next if it's there. Work with nothing to
+      point to yet is written in full. `bin/convention archive` removes these
+      lines. Questions about what this change builds are its own (design.md's
+      Open Questions), never backlog items.
     requires: []
 
   - id: specs
@@ -53,6 +68,24 @@ artifacts:
     template: spec.md
     instruction: |
       Create specification files that define WHAT the system should do.
+
+      Specs say what was decided. A requirement states a behavior the user
+      decided or confirmed, not merely what the code happens to do. Each rests
+      on one of: a ruling by the user, a test written in an OpenSpec change (it
+      asserts a spec the user approved), or behavior the code states plainly (a
+      validation and its message, a guard with its reason). A test written
+      before OpenSpec, or outside a change, shows what the code does: it's a
+      reason to ask, never a basis on its own; git tells which tests came from a
+      change. Behavior whose intent is unclear is asked, never written as SHALL:
+      it could be an accident or a bug. A bug found this way goes under Bugs in
+      `docs/backlog.md`, not in the spec.
+
+      A spec written from existing code states only what passes this rule;
+      the rest goes under To decide in the backlog. When the user asks for
+      specs to be corrected, each doubtful requirement is asked, and the answer
+      sends it one of three ways: confirmed, it stays; rejected, it's a bug in
+      the backlog; unanswered, it's removed from the spec (REMOVED, with the
+      reason) and becomes a question under To decide.
 
       A spec is a behavior contract, not an implementation plan.
 
@@ -195,7 +228,18 @@ artifacts:
       proposal for motivation and, once written, the specs for requirements -
       if a section would only restate them, point to them instead.
 
-      Good design docs explain the "why" behind technical decisions.
+      Good design docs explain the "why" behind technical decisions. This is
+      where the change's decisions live; there is no separate ADR folder.
+
+      If the change adds or changes models, name the feature that owns each one
+      (its page lives at `openspec/specs/<feature>/models/<model>.md`).
+
+      A decision that rests on a measurement quotes the number, says which
+      database it came from (development and production can differ: engine,
+      data, query plans), and keeps the script that produced it in the change's
+      `measurements/` folder. The script's header names its inputs, so it can
+      be re-run. Keep the scripts and the numbers, never their outputs: outputs
+      can hold real data.
     requires:
       - proposal
 
@@ -252,7 +296,11 @@ artifacts:
         (`+`) or modify (`~`), grouped by area (models, controllers, pages,
         jobs, tests, docs), and by repo first when the change spans several.
 
-      Keep each diagram focused: split a crowded one into two files. Every
+      Keep each diagram focused: split a crowded one into two files. Avoid
+      `direction LR` and `note` blocks in every diagram: they make it too wide
+      for the pane. A note about a screen's layout (e.g. "(full width)") goes
+      in the English `%%` caption, never next to a label. Data models are
+      always erDiagram, never classDiagram. Every
       diagram must match the specs and design; if drawing it reveals a gap or a
       contradiction, fix the design or specs first, then the diagram.
       Make sure every file is valid Mermaid that renders (the user opens the
@@ -327,6 +375,66 @@ artifacts:
       ```
 
       Reference specs for what needs to be built, design for how to build it.
+
+      Documentation tasks follow the convention (CONVENTION.md, "Documentation
+      is part of the work"). When the change adds a capability, a task creates
+      its feature page, `openspec/specs/<capability>/implementation.md`, from
+      this skeleton, and adds its row to `docs/README.md`. While the change is
+      in progress the page links the delta spec and the change folder;
+      `bin/convention archive` moves both links.
+
+      ```markdown
+      # <Feature name>
+
+      **Status:** implemented | in progress · **Spec:** [`<capability>`](../../changes/<change>/specs/<capability>/spec.md) · **Changes:** [<change>](../../changes/<change>/)
+
+      ## Purpose
+      ## How it works
+      Diagram: [<flow name>](diagrams/<flow-name>.mmd)
+      ## Models
+      | Model | What it is |
+      |---|---|
+      | [User](models/user.md) | ... |
+
+      ## Data model
+      Diagram: [data model](diagrams/data-model.mmd) (generated from the models).
+
+      ## Business rules
+      ## Code map
+      ## Limitations
+      ```
+
+      When the change adds a model, a task creates its page in the owning
+      feature, then runs `bin/rails docs:models`:
+
+      ```markdown
+      # User
+
+      **Feature:** [staff](../implementation.md) · **Status:** implemented
+
+      One or two sentences: what this model is for the people using the app.
+
+      ## Summary
+      <!-- BEGIN generated: model User -->
+      <!-- END generated: model User -->
+
+      ## Meaning and rules
+      - what attributes mean when the name isn't enough, invariants, why
+      ```
+
+      Single-table subclasses have no page of their own: the base class's page
+      lists them, and their meaning goes in its Meaning and rules.
+
+      The final verification task runs the change's own tests plus
+      `bin/rails docs:check`, `bin/check-diagrams`, `bin/check-links` and
+      `openspec validate --all --strict`, and checks:
+      - the feature pages are updated or created, with `docs/README.md`'s map;
+      - every model added or changed has its page, and `docs:models` ran;
+      - the architecture diagrams are updated if the architecture changed
+        (planned versus implemented marked);
+      - a runbook is added or updated for any operations step the change needs;
+      - limitations the change found are on their pages, and bugs, cleanups
+        and questions in the backlog.
     requires:
       - specs
       - design
@@ -338,3 +446,12 @@ apply:
   instruction: |
     Read context files, work through pending tasks, mark complete as you go.
     Pause if you hit blockers or need clarification.
+
+    A decision the design didn't cover goes into design.md marked "decided
+    during apply", and the affected specs, diagrams and tasks are fixed in the
+    same pass, so the change stays consistent with what was built. Writing or
+    changing a spec here follows the specs step's rules: ask before writing
+    behavior nobody decided.
+
+    When the tasks are done, archive with `bin/convention archive <change>`
+    (only when the user asks).

@@ -1,5 +1,11 @@
 # Keeps the generated parts of the feature docs in sync with the models.
-# See CONVENTION.md ("Features") and `bin/rails docs:models` / `docs:check`.
+# See CONVENTION.md ("Documentation is part of the work") and `bin/rails docs:models` / `docs:check`.
+#
+# The output format is a convention the user chose (model summaries as ### sub-sections with
+# attribute, enum and validation tables and association sentences; erDiagrams with borrowed
+# models as plain boxes labelled with their owner). Change it only here, in summary.rb and
+# er_diagram.rb, with tests in the project's test/lib/model_docs_test.rb; never by hand-editing
+# the output.
 #
 # A feature owns a model by having openspec/specs/<feature>/models/<model>.md
 # (e.g. models/user.md) containing its marker block:
