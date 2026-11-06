@@ -140,10 +140,11 @@ module ModelDocs
         path.read.gsub(MODEL_BLOCK) do
           name = Regexp.last_match(1)
           model = @models[name]
-          body = if model.nil? then "_Unknown model #{name}._\n"
-                 elsif !model.table_exists? then "_#{name} has no table (`#{model.table_name}`)._\n"
-                 else Summary.new(model, link_to: ->(target) { link_from(path, target) }).to_markdown
-                 end
+          body =
+            if model.nil? then "_Unknown model #{name}._\n"
+            elsif !model.table_exists? then "_#{name} has no table (`#{model.table_name}`)._\n"
+            else Summary.new(model, link_to: ->(target) { link_from(path, target) }).to_markdown
+            end
           # Blank lines around the block so Markdown renders the table.
           "<!-- BEGIN generated: model #{name} -->\n\n#{body}\n<!-- END generated: model #{name} -->"
         end
