@@ -36,6 +36,20 @@ During apply, a decision the design didn't cover goes into `design.md` marked "d
 
 Archiving follows the `operations.archive.guidance` in `openspec/config.yaml` (diagrams, spec links, change links, the backlog lines and limitations the change settled, validation).
 
+### Fixes: a change or a plain commit
+
+A fix goes through OpenSpec when it changes what the spec says. Ask: **is the right behavior already written down?**
+
+- **Outside the domain** (a typo, a margin, a misaligned icon, copy that says the same thing better): a plain commit. Specs say nothing about it.
+- **Written down, and the code disagrees**: a plain commit. The fix brings the code back to what a requirement, a design decision or an archived change already states; nothing needs deciding.
+- **Not written down** (a logic gap, an edge case nobody decided, a spec that's silent or wrong): a change. The fix is new behavior, so it needs a decision and a requirement (see "Specs say what was decided"). "Expected" means recorded: behavior that only seems obvious isn't written down. A bug ruled in the backlog (`ruled …`) whose spec is silent also goes through a change, so the ruling becomes a requirement instead of leaving with the bullet.
+
+When the answer isn't clear, ask the user.
+
+A plain-commit fix still carries, in the same commit: a regression test that fails without the fix (not for cosmetic fixes), the bug's removal from the backlog's Bugs (and its line in Next), the feature page updated if what it says changed, and a message that names the bug by its title. It has no line in Working on: there's no change to link.
+
+A fix that is a change is usually small: a proposal, a delta spec, tasks and the diagrams that apply, often just `files.mmd`. design.md only if a decision needs recording; no screen wireframe when the UI doesn't change.
+
 ## Exploration is not a change
 
 Surveys, measurements and experiments happen in explore mode (`/opsx:explore`) and in scratch scripts under `tmp/` until the approach is settled; then it becomes a proposal. A measurement often exists before any change and serves several.
