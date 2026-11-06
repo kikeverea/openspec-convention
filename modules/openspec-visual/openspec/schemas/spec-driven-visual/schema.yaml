@@ -386,7 +386,7 @@ artifacts:
       ```markdown
       # <Feature name>
 
-      **Status:** implemented | in progress · **Spec:** [`<capability>`](../../changes/<change>/specs/<capability>/spec.md) · **Changes:** [<change>](../../changes/<change>/)
+      **Spec:** [`<capability>`](../../changes/<change>/specs/<capability>/spec.md) · **Changes:** [<change>](../../changes/<change>/)
 
       ## Purpose
       ## How it works
@@ -410,7 +410,7 @@ artifacts:
       ```markdown
       # User
 
-      **Feature:** [staff](../implementation.md) · **Status:** implemented
+      **Feature:** [staff](../implementation.md)
 
       One or two sentences: what this model is for the people using the app.
 

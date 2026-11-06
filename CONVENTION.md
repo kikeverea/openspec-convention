@@ -1,6 +1,6 @@
 # Shared convention
 
-These are the rules every project shares: where its planning and documentation live, how they're kept true, and how work is committed. Each project's `CLAUDE.md` loads this file next to its own `AGENTS.md`: it imports `AGENTS.md`, and tells the agent to read this file from the folder named in the project's untracked `.convention`, asking the user when it's missing. `AGENTS.md` describes the project and adds what's specific to it: the domain, the stack, what counts as operations, the terms, the examples. Where a project deliberately departs from a rule here, its `AGENTS.md` says so; otherwise this file applies.
+These are the rules every project shares: where its planning and documentation live, how they're kept true, and how work is committed. Each project's `CLAUDE.md` imports this file (`@~/convention/CONVENTION.md`) next to its own `AGENTS.md`; the convention lives at `~/convention` on every computer. `AGENTS.md` describes the project and adds what's specific to it: the domain, the stack, what counts as operations, the terms, the examples. Where a project deliberately departs from a rule here, its `AGENTS.md` says so; otherwise this file applies.
 
 The rules live where they apply. This file holds what applies to all work. The OpenSpec schema (`openspec/schemas/spec-driven-visual`) holds what applies while writing a proposal, specs, design, diagrams or tasks, and OpenSpec serves it at that step. Scripts do or check the mechanical parts: `bin/check-diagrams`, `bin/check-links`, `bin/rails docs:models` and `docs:check`, `bin/convention`.
 
@@ -87,7 +87,7 @@ A project may add sections; its `AGENTS.md` says which. No `README.md` files in 
 
 A feature page holds only what's true of the shipped code. Everything else is work still to do, in `docs/backlog.md`.
 
-- **Limitation**: something isn't built. A bullet on its feature page, in the last section.
+- **Limitation**: a boundary of a built feature, something it doesn't do. A bullet on its feature page, in the last section. A capability that doesn't exist at all isn't a limitation of anything: it goes in Next, written in full.
 - **Bug**: something built is clearly wrong.
 - **Cleanup**: dead code, a stale column, an outdated comment; users see nothing wrong.
 - **To decide**: something built may or may not be wrong; the user decides.
@@ -125,7 +125,7 @@ Each is a bullet starting with a short bold title, then a description. Bugs, cle
 
 ## Tests
 
-Run the tests you wrote or touched, not the whole suite: the full suite runs only when the user asks. `AGENTS.md` gives the project's test commands.
+Run the tests relevant to the work being done (the tests of the code you changed, and the ones you wrote), not the whole suite: the full suite runs only when the user asks. `AGENTS.md` gives the project's test commands.
 
 ## Commits
 
@@ -134,7 +134,7 @@ Run the tests you wrote or touched, not the whole suite: the full suite runs onl
 
 ## The convention itself
 
-It lives in its own repo (the folder `.convention` names): this file, read by every project, and the modules `bin/convention sync` copies into each one (its README has the rest). `bin/convention check` fails when a copy drifts, and says what to do.
+It lives in its own repo, at `~/convention`: this file, read by every project, and the modules `bin/convention sync` copies into each one (its README has the rest). `bin/convention check` fails when a copy drifts, and says what to do.
 
 - Ask the user before changing the convention: it changes how every project works.
 - Other projects' sessions are asked only when the user asks; what they reply is input for the user, never a decision.

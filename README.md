@@ -6,7 +6,7 @@ The planning and documentation convention shared by the Rails projects (POS, gar
 
 | Path | What it is | How a project gets it |
 |---|---|---|
-| `CONVENTION.md` | The shared rules for agents | Read from here by every project (its `CLAUDE.md` says how), never copied |
+| `CONVENTION.md` | The shared rules for agents | Imported by every project's `CLAUDE.md`, never copied |
 | `modules/core/` | `bin/convention`: sync, drift check, and `archive` (an OpenSpec archive plus its mechanical follow-up) | Copied by `bin/convention sync` (always) |
 | `modules/docs-checks/` | `bin/check-diagrams`, `bin/check-links`, `vendor/pele/` (the Pele build Obsidian uses) | Copied |
 | `modules/model-docs/` | `lib/model_docs*.rb`, `lib/tasks/docs.rake` (`docs:models`, `docs:check`) | Copied |
@@ -21,23 +21,19 @@ Not part of the convention, and owned by each project: `AGENTS.md`, `openspec/co
 From the project's root:
 
 ```sh
-~/RubymineProjects/convention/bin/convention sync core docs-checks model-docs openspec-visual
+~/convention/bin/convention sync core docs-checks model-docs openspec-visual
 ```
 
 If the project already has its own copies, sync lists the ones that differ and stops. Move whatever is worth keeping into the source first, then rerun with `FORCE=1`. Then:
 
-1. Point the project at the convention and make `CLAUDE.md` load it. `.convention` is untracked, one per computer, with one line: this folder's path. `bin/convention` reads it too (`CONVENTION_ROOT` overrides it).
-   ```sh
-   echo '~/RubymineProjects/convention' > .convention   # this folder, on this computer
-   echo '/.convention' >> .gitignore
-   ```
+1. Make `CLAUDE.md` import both files. The convention lives at `~/convention` on every computer (clone it there; `CONVENTION_ROOT` overrides it for `bin/convention` only):
    ```markdown
    @AGENTS.md
+   @~/convention/CONVENTION.md
 
-   This project follows a shared convention kept outside the repo. `.convention` (untracked, one per computer) holds one line: the path to the convention's folder on this computer.
-
-   At the start of every session, before any other work, read `.convention`, then read `CONVENTION.md` in that folder: its rules apply to all work here. If `.convention` is missing, or its folder has no `CONVENTION.md` (a fresh clone, another computer, a moved folder), ask the user where the convention is, write that path to `.convention`, and read it before doing anything else.
+   The second import is the shared convention. If its rules ("Shared convention") don't appear above, `~/convention` isn't on this computer: ask the user before doing any work.
    ```
+   Claude Code asks once to allow an import from outside the project.
 2. Trim `AGENTS.md` to what's specific to the project: what it is, the stack and commands, what counts as operations, which surfaces are in the users' language and the English names of domain terms, extra feature page sections, extra files never to commit, and any rule it deliberately changes.
 3. Run `bin/convention check` from `bin/ci` (or whatever the project runs before pushing). It passes where the source isn't checked out, such as GitHub CI.
    Run `bin/check-diagrams` and `bin/check-links` in GitHub CI too, in a job with `actions/setup-node` set to Node 22.12 or newer: the runner's default Node may be older.

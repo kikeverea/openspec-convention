@@ -1,7 +1,7 @@
 #!/usr/bin/env ruby
 # frozen_string_literal: true
 
-# Keeps this project's copy of the shared convention (~/RubymineProjects/convention) in step
+# Keeps this project's copy of the shared convention (~/convention) in step
 # with the source. Run it from the project's root.
 #
 #   bin/convention check              # fail if this project and the source have drifted apart
@@ -16,20 +16,17 @@
 #     it there, then sync every project.
 #   - changed in the source: run `bin/convention sync`.
 # Where the source isn't checked out (CI, the server), `check` says so and passes. The source is
-# found through CONVENTION_ROOT, else the project's untracked .convention file, else
-# ~/RubymineProjects/convention; when sync or upstream can't find it, ask the user where it is.
+# found at CONVENTION_ROOT, else ~/convention; when sync or upstream can't find it, clone it
+# there.
 require "digest"
 require "fileutils"
 require "pathname"
 require "yaml"
 
 module Convention
-  # Where the source is on this computer: CONVENTION_ROOT, else the project's untracked
-  # .convention file (one line, the folder's path), else the default.
-  POINTER = ".convention"
+  # Where the source is on this computer: CONVENTION_ROOT, else ~/convention.
   SOURCE = File.expand_path(
-    ENV["CONVENTION_ROOT"] || (File.read(POINTER).strip if File.exist?(POINTER)).then { |path| path unless path&.empty? } ||
-      "~/RubymineProjects/convention"
+    ENV["CONVENTION_ROOT"] || "~/convention"
   )
   LOCK = "convention.lock"
   ALWAYS = %w[core].freeze
@@ -96,7 +93,7 @@ module Convention
   end
 
   def sync(modules)
-    abort "Convention source not found at #{SOURCE}: write its folder's path to #{POINTER}." unless File.directory?(SOURCE)
+    abort "Convention source not found at #{SOURCE}: clone it to ~/convention, or set CONVENTION_ROOT." unless File.directory?(SOURCE)
     abort "Run sync from a project's root, not from the source." if File.expand_path(Dir.pwd) == SOURCE
 
     adopted = (ALWAYS + (lock&.fetch("modules") || []) + modules).uniq
@@ -145,7 +142,7 @@ module Convention
   end
 
   def diff(paths)
-    abort "Convention source not found at #{SOURCE}: write its folder's path to #{POINTER}." unless File.directory?(SOURCE)
+    abort "Convention source not found at #{SOURCE}: clone it to ~/convention, or set CONVENTION_ROOT." unless File.directory?(SOURCE)
     files = source_files(lock ? lock["modules"] : available_modules)
     paths = drift.keys if paths.empty? && lock
     paths.each do |path|
@@ -155,7 +152,7 @@ module Convention
   end
 
   def upstream(paths)
-    abort "Convention source not found at #{SOURCE}: write its folder's path to #{POINTER}." unless File.directory?(SOURCE)
+    abort "Convention source not found at #{SOURCE}: clone it to ~/convention, or set CONVENTION_ROOT." unless File.directory?(SOURCE)
     abort "Name the files to copy back to the source." if paths.empty?
     files = source_files(lock ? lock["modules"] : available_modules)
     paths.each do |path|
