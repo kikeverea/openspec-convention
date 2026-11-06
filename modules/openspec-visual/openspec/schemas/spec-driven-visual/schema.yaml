@@ -215,7 +215,10 @@ artifacts:
       diagram. Nothing else: no prose, no restated specs or design. Name files in
       kebab-case after what they show.
 
-      Create each view that applies to this change, and skip the ones that don't:
+      Create each view that applies to this change, and skip the ones that don't.
+      A small fix usually needs only `files.mmd`, plus a flow or logic diagram if
+      it changes one.
+
 
       - `data-model.mmd`: a Mermaid erDiagram in the same style as the
         generated feature diagrams (`bin/rails docs:models`), so the preview

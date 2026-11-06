@@ -41,10 +41,10 @@ Archiving follows the `operations.archive.guidance` in `openspec/config.yaml` (d
 A fix goes through OpenSpec when it changes what the spec says. Ask: **is the right behavior already written down?**
 
 - **Outside the domain** (a typo, a margin, a misaligned icon, copy that says the same thing better): a plain commit. Specs say nothing about it.
-- **Written down, and the code disagrees**: a plain commit. The fix brings the code back to what a requirement, a design decision or an archived change already states; nothing needs deciding.
+- **Written down, and the code disagrees**: a plain commit. The fix brings the code back to what's already decided; nothing needs deciding.
 - **Not written down** (a logic gap, an edge case nobody decided, a spec that's silent or wrong): a change. The fix is new behavior, so it needs a decision and a requirement (see "Specs say what was decided"). "Expected" means recorded: behavior that only seems obvious isn't written down. A bug ruled in the backlog (`ruled …`) whose spec is silent also goes through a change, so the ruling becomes a requirement instead of leaving with the bullet.
 
-When the answer isn't clear, ask the user.
+"Written down" means the main spec (`openspec/specs/<capability>/spec.md`): every archived change was merged into it, so it already holds the latest decision, and a later change that overrode an earlier one is already reflected there. Archived changes are history: a design decision counts only for what the spec doesn't reach (how something is built rather than what it does), and then the most recent archived change that decided it wins. When the answer isn't clear, ask the user.
 
 A plain-commit fix still carries, in the same commit: a regression test that fails without the fix (not for cosmetic fixes), the bug's removal from the backlog's Bugs (and its line in Next), the feature page updated if what it says changed, and a message that names the bug by its title. It has no line in Working on: there's no change to link.
 
@@ -58,9 +58,11 @@ A design that rests on a measurement quotes the number, says which database it c
 
 ## Specs say what was decided
 
-A requirement states a behavior the user decided or confirmed, not merely what the code happens to do. Each requirement rests on one of: a ruling by the user, a test that asserts it, or behavior the code states plainly (a validation and its message, a guard with its reason). Behavior whose intent is unclear is **asked**, never written as SHALL: it could be an accident or a bug. A bug found this way goes in the backlog under Bugs, not in the spec.
+A requirement states a behavior the user decided or confirmed, not merely what the code happens to do. Each requirement rests on one of: a ruling by the user, a test written in an OpenSpec change (it asserts a spec the user approved), or behavior the code states plainly (a validation and its message, a guard with its reason). Behavior whose intent is unclear is **asked**, never written as SHALL: it could be an accident or a bug. A bug found this way goes in the backlog under Bugs, not in the spec.
 
-A spec written from existing code (documenting a feature that was built before OpenSpec) states only what passes this rule. Everything else goes in the backlog under To decide, to be asked.
+A spec written from existing code (documenting a feature that was built before OpenSpec) states only what passes this rule. Everything else goes in the backlog under To decide, to be asked. A test written before OpenSpec, or outside a change, shows what the code does, not what was decided: it's a reason to ask, never a basis on its own. Git tells which tests came from a change.
+
+**Correcting a spec** goes through a change even when no code changes: the archived change records why a requirement left, and main specs only change at archive. An audit of several specs is one change, with a delta spec per capability. Each doubtful requirement is asked, and the answer sends it one of three ways: confirmed, it stays; rejected, it's a bug, in the backlog's Bugs; unanswered, it's removed from the spec and becomes a question under To decide. Behavior never drops out of the docs unrecorded.
 
 ## Documentation is part of the change
 
