@@ -14,14 +14,37 @@
 #
 # Single-table subclasses (Client < Contact) share their base class's table, so they have no
 # page of their own: they are listed on the base class's page and links to them go there.
+#
+# A model whose table does not exist, or an association whose class cannot be loaded, is
+# reported rather than crashing the run.
+#
+# PENDING_LIST (optional; no file means no list) names the models not documented yet, for a
+# project adopting this with models already written. Each is exempt from "has no owning feature"
+# until its page exists -- then it must leave the list. The list only shrinks.
 module ModelDocs
   MODEL_DOCS_GLOB = "openspec/specs/*/models/*.md"
   GLOBAL_DIAGRAM = "docs/architecture/data-model.mmd"
-  MODEL_BLOCK = /<!-- BEGIN generated: model (\w+) -->\n.*?<!-- END generated: model \1 -->/m
+  PENDING_LIST = "openspec/undocumented-models.txt"
+  MODEL_BLOCK = /<!-- BEGIN generated: model ([\w:]+) -->\n.*?<!-- END generated: model \1 -->/m
 
+  # The models that get a page: base classes only (an STI subclass shares its base's table and
+  # page), and only those with a table.
   def self.application_models
     Rails.application.eager_load!
-    ApplicationRecord.descendants.reject(&:abstract_class?).select { |model| model.base_class == model }.sort_by(&:name)
+    ApplicationRecord.descendants.reject(&:abstract_class?)
+                     .select { |model| model.base_class == model }
+                     .select { |model| Object.const_defined?(model.name) rescue false } # not a test's throwaway class
+                     .sort_by(&:name)
+  end
+
+  # The page file name for a model: "Presentation::Deck" -> "presentation_deck.md".
+  def self.page_name(name) = "#{name.underscore.tr('/', '_')}.md"
+
+  # An association's class, or nil when it cannot be loaded (a typo'd `through:`, a missing class).
+  def self.klass_of(association)
+    association.klass
+  rescue NameError, NoMethodError, ArgumentError
+    nil
   end
 
   class Generator
@@ -33,20 +56,32 @@ module ModelDocs
 
     # { "User" => ["openspec/specs/staff/models/user.md"], ... }
     def ownership
-      @ownership ||= documents.each_with_object(Hash.new { |hash, key| hash[key] = [] }) do |path, owners|
-        path.read.scan(MODEL_BLOCK) { |(name)| owners[name] << relative(path) }
+      # A plain hash, not one with a default block: looking up a model with no page (to link to it)
+      # must not register it as owned.
+      @ownership ||= documents.each_with_object({}) do |path, owners|
+        path.read.scan(MODEL_BLOCK) { |(name)| (owners[name] ||= []) << relative(path) }
+      end
+    end
+
+    def pending
+      @pending ||= begin
+        file = @root.join(PENDING_LIST)
+        file.exist? ? file.readlines.map(&:strip).reject { |line| line.empty? || line.start_with?("#") } : []
       end
     end
 
     def problems
-      unowned = (@models.keys - ownership.keys).map { |name| "#{name} has no owning feature (create openspec/specs/<feature>/models/#{name.underscore}.md with its marker block)" }
+      unowned = (@models.keys - ownership.keys - pending).map { |name| "#{name} has no owning feature (create openspec/specs/<feature>/models/#{ModelDocs.page_name(name)} with its marker block)" }
+      graduated = (pending & ownership.keys).map { |name| "#{name} is documented now: remove it from #{PENDING_LIST}" }
+      unknown_pending = (pending - @models.keys).map { |name| "#{PENDING_LIST} names unknown model #{name}" }
       shared = ownership.select { |_, paths| paths.size > 1 }.map { |name, paths| "#{name} is owned by more than one feature: #{paths.join(", ")}" }
       unknown = (ownership.keys - @models.keys).map { |name| "#{ownership[name].join(", ")} documents unknown model #{name}" }
       misplaced = ownership.flat_map do |name, paths|
-        paths.reject { |path| File.basename(path) == "#{name.underscore}.md" && File.basename(File.dirname(path)) == "models" }
-             .map { |path| "#{name} must be documented in openspec/specs/<feature>/models/#{name.underscore}.md, not #{path}" }
+        paths.reject { |path| File.basename(path) == ModelDocs.page_name(name) && File.basename(File.dirname(path)) == "models" }
+             .map { |path| "#{name} must be documented in openspec/specs/<feature>/models/#{ModelDocs.page_name(name)}, not #{path}" }
       end
-      unowned + shared + unknown + misplaced
+      tableless = @models.values.reject(&:table_exists?).map { |model| "#{model.name} has no table #{model.table_name}" }
+      unowned + graduated + unknown_pending + shared + unknown + misplaced + tableless
     end
 
     # { relative_path => expected_content }
@@ -82,14 +117,19 @@ module ModelDocs
         ownership.values.flatten.map { |path| path.split("/")[2] }.uniq.sort
       end
 
-      # Relative link from a page to the owning page of another model.
+      def drawable
+        @drawable ||= @models.values.select(&:table_exists?)
+      end
+
+      # Relative link from a page to the owning page of another model (its base's, for a subclass).
       def link_from(page, target)
-        owner = ownership.fetch(target.base_class.name, nil)&.first or return nil
+        owner = ownership[target.base_class.name]&.first or return nil
         @root.join(owner).relative_path_from(page.dirname).to_s
       end
 
       def owned_models(feature)
-        ownership.select { |_, paths| paths.any? { |path| path.split("/")[2] == feature } }.keys.filter_map { |name| @models[name] }
+        ownership.select { |_, paths| paths.any? { |path| path.split("/")[2] == feature } }.keys
+                 .filter_map { |name| @models[name] }.select(&:table_exists?)
       end
 
       def relative(path)
@@ -100,7 +140,10 @@ module ModelDocs
         path.read.gsub(MODEL_BLOCK) do
           name = Regexp.last_match(1)
           model = @models[name]
-          body = model ? Summary.new(model, link_to: ->(target) { link_from(path, target) }).to_markdown : "_Unknown model #{name}._\n"
+          body = if model.nil? then "_Unknown model #{name}._\n"
+                 elsif !model.table_exists? then "_#{name} has no table (`#{model.table_name}`)._\n"
+                 else Summary.new(model, link_to: ->(target) { link_from(path, target) }).to_markdown
+                 end
           # Blank lines around the block so Markdown renders the table.
           "<!-- BEGIN generated: model #{name} -->\n\n#{body}\n<!-- END generated: model #{name} -->"
         end
@@ -114,7 +157,7 @@ module ModelDocs
       end
 
       def render_global_diagram
-        <<~MMD + ErDiagram.new(@models.values).to_mermaid
+        <<~MMD + ErDiagram.new(drawable).to_mermaid
           %% GENERATED by `bin/rails docs:models` from the ActiveRecord models. Do not edit by hand.
           %% Implemented models only; planned models live in their OpenSpec change until built.
           %% Each model is documented in its owning feature: openspec/specs/<feature>/models/<model>.md
@@ -122,7 +165,7 @@ module ModelDocs
       end
 
       def owner_feature(model)
-        path = ownership.fetch(model.base_class.name, nil)&.first
+        path = ownership[model.base_class.name]&.first
         path && path.split("/")[2]
       end
   end
