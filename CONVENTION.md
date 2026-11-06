@@ -12,7 +12,9 @@ The rules live where they apply. This file holds what applies to all work. The O
 
 ## OpenSpec only when asked
 
-OpenSpec runs only when the user explicitly asks for it: an explore (`/opsx:explore`), a proposal or a change. Everything else is direct work: no proposal, specs or tasks, just the code, its tests and its documentation. If you think a piece of work deserves a change, say so; don't start one.
+OpenSpec runs only when the user explicitly asks for it: an explore (`/opsx:explore`), a proposal or a change. Everything else is direct work: no proposal, specs or tasks, just the code, its tests and its documentation.
+
+**Work that adds behavior: ask first.** Before starting work that would add behavior the main spec doesn't state (a feature, an edge case, a rule the spec is silent on), ask the user whether they want a change for it, and wait for the answer. Yes: the work goes through OpenSpec. No: it's direct work. Never start a change without that yes.
 
 Once asked: propose (all artifacts) → apply, only when the user asks → archive. Proposing is planning only: no code until the user asks to apply. Archive with `bin/convention archive <change>`, which runs `openspec archive` and does the mechanical follow-up (backlog lines, links, checks), then lists what's left to you.
 
@@ -27,7 +29,7 @@ Surveys, measurements and experiments happen in explore mode and in scratch scri
 A fix is direct work: a plain commit, unless the user asks for a change.
 
 - Errors, crashes, data loss and security holes are bugs whatever the spec says.
-- When a fix would choose a behavior nobody decided (an edge case, a rule the spec is silent on), say so: the user may want it recorded in a change. Don't start one yourself.
+- When a fix would choose a behavior nobody decided (an edge case, a rule the spec is silent on), it adds behavior: ask first (see above).
 - "Decided" means the main spec (`openspec/specs/<capability>/spec.md`). Every archived change is merged into it, so it holds the latest decision. An archived design decision counts only where the spec doesn't reach (how something is built rather than what it does), and then the most recent one wins.
 
 A fix commit carries a regression test that fails without the fix (not for cosmetic fixes), the bug's removal from the backlog (with its line in Next), the feature page updated if what it says changed, and a message that names the bug by its title.
