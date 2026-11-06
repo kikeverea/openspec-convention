@@ -34,7 +34,7 @@ Propose (all artifacts) → apply, only when the user asks → archive. Proposin
 
 During apply, a decision the design didn't cover goes into `design.md` marked "decided during apply", and the affected specs, diagrams and tasks are fixed in the same pass, so the change stays consistent with what was built.
 
-Archiving follows the `operations.archive.guidance` in `openspec/config.yaml` (diagrams, spec links, change links, items the change built, validation).
+Archiving follows the `operations.archive.guidance` in `openspec/config.yaml` (diagrams, spec links, change links, the limitations and backlog lines the change built or fixed, validation).
 
 ## Exploration is not a change
 
@@ -44,9 +44,9 @@ A design that rests on a measurement quotes the number, says which database it c
 
 ## Specs say what was decided
 
-A requirement states a behavior the user decided or confirmed, not merely what the code happens to do. Each requirement rests on one of: a ruling by the user, a test that asserts it, or behavior the code states plainly (a validation and its message, a guard with its reason). Behavior whose intent is unclear is **asked**, never written as SHALL: it could be an accident or a bug. A bug found this way becomes a Bug item on the feature page, not part of the spec.
+A requirement states a behavior the user decided or confirmed, not merely what the code happens to do. Each requirement rests on one of: a ruling by the user, a test that asserts it, or behavior the code states plainly (a validation and its message, a guard with its reason). Behavior whose intent is unclear is **asked**, never written as SHALL: it could be an accident or a bug. A bug found this way goes in the backlog under Bugs, not in the spec.
 
-A spec written from existing code (documenting a feature that was built before OpenSpec) states only what passes this rule. Everything else goes on the feature page as a Question, to be asked.
+A spec written from existing code (documenting a feature that was built before OpenSpec) states only what passes this rule. Everything else goes in the backlog under To decide, to be asked.
 
 ## Documentation is part of the change
 
@@ -62,7 +62,7 @@ Each app-level OpenSpec capability has one page, `implementation.md`, in the sam
 4. **Business rules**: the non-obvious ones, with the why.
 5. **Code map**: controllers, models, pages, jobs, scripts, tests (paths).
 6. **Spec and history**: link to the OpenSpec spec and the changes that shaped it.
-7. **Limitations, bugs and open questions**: the feature's items (see below). Always the last section.
+7. **Limitations**: what the feature deliberately doesn't do (see below). Always the last section.
 
 A project may add sections (an API section, a code map per repo); its `AGENTS.md` says which. `docs/README.md` maps every capability to its page. Don't add `README.md` files to capability folders; the feature page is `implementation.md`.
 
@@ -86,33 +86,52 @@ Diagram: [data model](diagrams/data-model.mmd) (generated from the models).
 
 ## Business rules
 ## Code map
-## Limitations, bugs and open questions
+## Limitations
 ```
 
-**Changing an existing feature.** In the same change: update the flows, business rules, code map and items; append the change name to **Changes**; update the hand-written *Meaning and rules* of every model page you touched. `docs:check` only guards the generated parts. Keeping the hand-written parts true is your job.
+**Changing an existing feature.** In the same change: update the flows, business rules, code map and limitations; append the change name to **Changes**; update the hand-written *Meaning and rules* of every model page you touched. `docs:check` only guards the generated parts. Keeping the hand-written parts true is your job.
 
-### Items: limitations, bugs, questions and the backlog
+### Limitations and the backlog
 
-What a feature doesn't do, what's wrong with it and what's still to settle lives **once**, on the feature's page, in its last section. The backlog only orders it. Every item is one bullet that starts with its kind and a short bold title:
+A feature page describes what's built, so it holds only what's true of the shipped code. **Limitations** are boundaries of the design: what the feature deliberately doesn't do, true until a change moves them. They live on the feature's page, in its last section. Everything else is work still to do, and lives in the **backlog** (`docs/backlog.md`, linked from `docs/README.md`): bugs, cleanups and questions about shipped behavior. A known bug doesn't make a feature less "implemented"; it means the backlog has work on it.
+
+Each limitation is one bullet that starts with a short bold title:
 
 ```markdown
-## Limitations, bugs and open questions
-- **Limitation:** **No separate payments within a table** (planned). A table has one tab; moving items to another table is the workaround.
-- **Bug:** **A draft can outlive its table.** A draft left on a device that's never reopened stays in its storage.
-- **Question:** **Can a merge be extended?** Today it has to be undone first.
-- **Cleanup:** **Unused `legacy_code` column.** Nothing reads it since the import was retired.
+## Limitations
+- **No separate payments within a table** (planned). A table has one tab; moving items to another table is the workaround.
+- **No nested merges.** A merged table can't be merged again; undo it first.
 ```
 
-- **Kinds.** *Limitation*: something the feature doesn't do. *Bug*: it does something wrong. *Question*: behavior whose intent isn't settled; ask the user. *Cleanup*: dead code, a stale column, an outdated comment or note; users see nothing wrong and nothing is missing. A Bug that contradicts an explicit ruling by the user says so after its title, quoting the ruling with its date or linking where it was recorded: `(ruled 2026-11-05: "…")` or `(ruled: [design decision 4](…/design.md))`.
-- **Titles** are short and stable: they're how backlog lines and pointers find the item, and `bin/check-links` checks that every one still resolves. Renaming an item means updating its backlog line and pointers in the same change.
-- **State.** An item is plain until it's planned. `(planned)` after the title means it has a line in the backlog. `(proposed: [<change>](../../changes/<change>/))` means a change is working on it. An abandoned proposal goes back to `(planned)`.
-- **Removal.** The change that builds or fixes an item removes its bullet, its pointers and its backlog line when it's archived, not before: until then the item is still true of the shipped code. A `(proposed: …)` link that broke at archive marks an item the archive forgot.
-- **Items spanning features.** An item has one description. When one feature is clearly the one it mainly changes, it lives there. When none is (it touches most controllers, say), it's written in full in the backlog. Every other affected page carries a pointer: a bullet with the same kind and title and a link to where it's described, e.g. `- **Bug:** **Deleting a record in use gives a 500**: see [backlog](../../../docs/backlog.md).` An item links to another feature page or to the backlog only as a pointer, so `bin/check-links` can tell when the item it points to is gone.
-- **No page yet.** An item about a capability whose page doesn't exist yet goes in the backlog in full, and moves onto the page when it's written.
-- **Questions** are never ordered in the backlog. Their fixed prefix keeps them in one search: `grep -rn -- "- \*\*Question:\*\*" openspec/specs docs`.
-- **Not items.** Steps owed on production (a data fix, a password to set) are operations: they go in a runbook, never on a page or in the backlog.
+The backlog has four sections, in this order:
 
-**The backlog** (`docs/backlog.md`, linked from `docs/README.md`) is the order of what comes next, decided by the user. Each line is a link whose text is the item's title, pointing to the page that describes it: `1. [No separate payments within a table](../openspec/specs/table-service/implementation.md)`. Its only descriptions are the items that have no page to live on, written as numbered items in the same format (`2. **Bug:** **Deleting a record in use gives a 500.** …`).
+```markdown
+# Backlog
+
+## Next
+1. [No separate payments within a table](../openspec/specs/table-service/implementation.md)
+2. [Deleting a record in use gives a 500](#bugs)
+3. **Kitchen display.** Orders shown on a screen in the kitchen instead of printed.
+
+## Bugs
+- **Deleting a record in use gives a 500** (planned). Most admin controllers: [menu](../openspec/specs/menu/implementation.md), [printing](../openspec/specs/printing/implementation.md).
+- **A draft can outlive its table** (ruled 2026-11-05: "a replaced table's drafts are discarded"). Drafts on a device that's never reopened stay in its storage. [Table service](../openspec/specs/table-service/implementation.md).
+
+## Cleanups
+- **Unused `legacy_code` column.** Nothing reads it since the import was retired. [Menu](../openspec/specs/menu/implementation.md).
+
+## To decide
+- **Can a merge be extended?** Today it has to be undone first. [Table service](../openspec/specs/table-service/implementation.md).
+```
+
+- **Next** is the order of what comes next, decided by the user. Each line is a link whose text is the title of what it orders: a limitation, pointing to its feature page, or a bug or cleanup, pointing to its section (`#bugs`, `#cleanups`). Work that has nothing to point to yet (a new capability) is written in full as a numbered bold title and description. Questions are never ordered: they're asked.
+- **Bugs**: the feature does something wrong. **Cleanups**: dead code, a stale column, an outdated comment or note; users see nothing wrong and nothing is missing. **To decide**: shipped behavior whose intent isn't settled, typically found while documenting code built before OpenSpec; ask the user. Each is a bullet with a bold title, a description, and plain links to the feature pages it affects. A bug that contradicts an explicit ruling by the user says so after its title, quoting the ruling with its date or linking where it was recorded: `(ruled 2026-11-05: "…")` or `(ruled: [design decision 4](…/design.md))`.
+- **Questions about work not built yet** aren't backlog items: they belong to the change that builds it, as its proposal's or design's Open Questions. An answered question leaves To decide: it becomes a requirement, a limitation, a bug, or nothing.
+- **Titles** are short and stable: they're how the lines in Next find what they order, and `bin/check-links` checks that every one still resolves. Renaming a limitation, bug or cleanup means updating its line in Next in the same change.
+- **State.** A limitation, bug or cleanup is plain until it's planned. `(planned)` after the title means it has a line in Next. `(proposed: [<change>](../../changes/<change>/))` (from a feature page; `../openspec/changes/<change>/` from the backlog) means a change is working on it. An abandoned proposal goes back to `(planned)`.
+- **Removal.** The change that builds or fixes something removes its bullet and its line in Next when it's archived, not before: until then it's still true of the shipped code. A `(proposed: …)` link that broke at archive marks one the archive forgot.
+- **One description.** A limitation lives on the page of the feature it bounds. When it spans features, it lives on the one it mainly bounds; other pages don't repeat it. Bugs, cleanups and questions are described only in the backlog, and link to every page they affect.
+- **Not backlog items.** Steps owed on production (a data fix, a password to set) are operations: they go in a runbook.
 
 **Spec and change links.** The feature page links to `spec.md` in its own folder. While a change that creates the capability is in progress, link to the delta spec inside `openspec/changes/<change>/specs/` instead, and switch to `spec.md` when the change is archived. **Changes** link to `../../changes/<change>/` while the change is in progress and to `../../changes/archive/<date>-<change>/` once it's archived.
 
@@ -177,7 +196,7 @@ Design decisions live in each OpenSpec change's `design.md` (archived with the c
 - [ ] `bin/check-diagrams` and `bin/check-links` pass
 - [ ] Architecture diagrams updated if the architecture changed (planned vs implemented marked)
 - [ ] Runbook added or updated for any operations step the change needs
-- [ ] Items the change found are on their pages; items it builds are marked `(proposed: …)` and come off at archive
+- [ ] Limitations the change found are on their pages and bugs, cleanups and questions in the backlog; what it builds or fixes is marked `(proposed: …)` and comes off at archive
 
 ## Tests
 

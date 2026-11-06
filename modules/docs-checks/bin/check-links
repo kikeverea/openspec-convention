@@ -6,12 +6,11 @@
 // It catches a link to a change that was archived (changes/<change>/ instead of
 // changes/archive/<date>-<change>/), a diagram that was never copied into a spec, and typos.
 //
-// It also checks that links to items still find them (see "Items" in CONVENTION.md). An item is
-// a bullet like `- **Bug:** **Short title.** …` in a feature page's "Limitations, bugs and open
-// questions" section, or anywhere in docs/backlog.md. Then:
-//   - a backlog line `1. [Short title](…/implementation.md)` needs an item with that title there;
-//   - a pointer (an item linking to another page's items) needs its own title on that page.
-// Titles are compared as written, code spans included, ignoring a trailing period.
+// It also checks that the backlog's "Next" still finds what it orders (see "Limitations and the
+// backlog" in CONVENTION.md). A line `1. [Short title](…/implementation.md)` needs a bullet titled
+// `**Short title**` in that page's "Limitations" section; `1. [Short title](#bugs)` needs one in the
+// backlog's own section with that anchor. Titles are compared as written, code spans included,
+// ignoring a trailing period.
 //
 //   bin/check-links                                     # everything
 //   bin/check-links openspec/changes/<change>           # one change
@@ -20,9 +19,10 @@ import path from "node:path"
 import { fileURLToPath } from "node:url"
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..")
-const ITEMS_SECTION = "Limitations, bugs and open questions"
-const ITEM = /^\s*(?:[-*]|\d+\.)\s+\*\*(?:Limitation|Bug|Question|Cleanup):\*\*\s+\*\*(.+?)\*\*/
-const BACKLOG_LINE = /^\s*\d+\.\s+\[([^\]]+)\]\(\s*<?([^)\s>]+)>?\s*\)/
+const LIMITATIONS = "Limitations"
+const NEXT = "Next"
+const TITLED = /^\s*[-*]\s+\*\*(.+?)\*\*/
+const NEXT_LINE = /^\s*\d+\.\s+\[([^\]]+)\]\(\s*<?([^)\s>]+)>?\s*\)/
 
 function markdownIn(target) {
   if (!fs.existsSync(target)) return []
@@ -44,57 +44,52 @@ function linksIn(text) {
 
 const normalize = (title) => title.trim().replace(/\.$/, "").trim()
 const isBacklog = (file) => path.basename(file) === "backlog.md" && path.basename(path.dirname(file)) === "docs"
-const holdsItems = (file) => isBacklog(file) || path.basename(file) === "implementation.md"
+const isFeaturePage = (file) => path.basename(file) === "implementation.md"
+const anchor = (heading) => heading.trim().toLowerCase().replace(/[^\p{L}\p{N}\s-]/gu, "").replace(/\s/g, "-")
 
-// The lines that may hold items: a feature page's items section, or the whole backlog.
-function itemLines(file) {
-  const lines = withoutCodeBlocks(fs.readFileSync(file, "utf8")).split("\n")
-  if (isBacklog(file)) return lines
-
-  const start = lines.findIndex((line) => line.trim() === `## ${ITEMS_SECTION}`)
-  if (start === -1) return []
-  const end = lines.findIndex((line, i) => i > start && /^## /.test(line))
-  return lines.slice(start + 1, end === -1 ? undefined : end)
-}
-
-const titleCache = new Map()
-function titlesIn(file) {
-  if (!titleCache.has(file)) {
-    titleCache.set(file, new Set(itemLines(file).map((line) => line.match(ITEM)?.[1]).filter(Boolean).map(normalize)))
+// The "## " sections of a file, outside code blocks: Map(anchor => { heading, lines }).
+const sectionCache = new Map()
+function sections(file) {
+  if (!sectionCache.has(file)) {
+    const found = new Map()
+    let current = null
+    for (const line of withoutCodeBlocks(fs.readFileSync(file, "utf8")).split("\n")) {
+      const heading = line.match(/^## (.+?)\s*$/)
+      if (heading) found.set(anchor(heading[1]), (current = { heading: heading[1], lines: [] }))
+      else current?.lines.push(line)
+    }
+    sectionCache.set(file, found)
   }
-  return titleCache.get(file)
+  return sectionCache.get(file)
 }
 
+const titlesIn = (section) => new Set((section?.lines ?? []).map((line) => line.match(TITLED)?.[1]).filter(Boolean).map(normalize))
 const resolve = (from, link) => path.resolve(path.dirname(from), decodeURIComponent(link.replace(/[#?].*$/, "")))
 const shown = (file) => path.relative(process.cwd(), file)
 
-function missingTitles(file) {
-  if (!holdsItems(file)) return []
-  const lines = itemLines(file)
-  const where = (target) => (isBacklog(target) ? shown(target) : `the "${ITEMS_SECTION}" section of ${shown(target)}`)
+// Each line in the backlog's Next must find what it orders.
+function unresolvedNext(file) {
+  if (!isBacklog(file)) return []
 
-  const backlogLines = isBacklog(file)
-    ? lines.flatMap((line) => {
-      const match = line.match(BACKLOG_LINE)
-      if (!match || external.test(match[2])) return []
-      const target = resolve(file, match[2])
-      if (!fs.existsSync(target) || !holdsItems(target) || titlesIn(target).has(normalize(match[1]))) return []
-      return [ `${shown(file)}: no item titled "${normalize(match[1])}" in ${where(target)}` ]
-    })
-    : []
+  return (sections(file).get(anchor(NEXT))?.lines ?? []).flatMap((line) => {
+    const match = line.match(NEXT_LINE)
+    if (!match) return []
+    const [ , text, link ] = match
+    const title = normalize(text)
 
-  const pointers = lines.flatMap((line) => {
-    const title = line.match(ITEM)?.[1]
-    if (!title) return []
-    return linksIn(line).filter((link) => !external.test(link)).flatMap((link) => {
-      const target = resolve(file, link)
-      if (target === file || !fs.existsSync(target) || fs.statSync(target).isDirectory() || !holdsItems(target)) return []
-      if (titlesIn(target).has(normalize(title))) return []
-      return [ `${shown(file)}: the pointer "${normalize(title)}" has no item with that title in ${where(target)}` ]
-    })
+    if (link.startsWith("#")) {
+      const section = sections(file).get(link.slice(1))
+      if (!section) return [ `${shown(file)}: "${title}" points to ${link}, a section the backlog doesn't have` ]
+      if (titlesIn(section).has(title)) return []
+      return [ `${shown(file)}: no bullet titled "${title}" under "${section.heading}"` ]
+    }
+
+    if (external.test(link)) return []
+    const target = resolve(file, link)
+    if (!fs.existsSync(target) || !isFeaturePage(target)) return []
+    if (titlesIn(sections(target).get(anchor(LIMITATIONS))).has(title)) return []
+    return [ `${shown(file)}: no limitation titled "${title}" in ${shown(target)}` ]
   })
-
-  return [ ...backlogLines, ...pointers ]
 }
 
 const external = /^([a-z][a-z0-9+.-]*:|#)/i
@@ -109,10 +104,10 @@ const broken = files.flatMap((file) => {
 
   return links.flatMap((link) => (fs.existsSync(resolve(file, link)) ? [] : [ `${shown(file)}: ${link}` ]))
 })
-const untitled = files.flatMap(missingTitles)
+const untitled = files.flatMap(unresolvedNext)
 
 if (broken.length > 0) console.error(`${broken.length} of ${count} links in ${files.length} files point to nothing:\n\n${broken.join("\n")}\n`)
-if (untitled.length > 0) console.error(`${untitled.length} links to items don't find their item:\n\n${untitled.join("\n")}\n`)
+if (untitled.length > 0) console.error(`${untitled.length} lines in the backlog's Next don't find what they order:\n\n${untitled.join("\n")}\n`)
 if (broken.length > 0 || untitled.length > 0) process.exit(1)
 
 console.log(`All ${count} links in ${files.length} files resolve.`)

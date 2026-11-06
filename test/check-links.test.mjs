@@ -20,71 +20,76 @@ function check(files) {
   return { ok: run.status === 0, output: run.stdout + run.stderr }
 }
 
-const page = (items, extra = "") => `# Tables\n\n## Business rules\n- **A merge is not a delete.** Rule.\n${extra}\n## Limitations, bugs and open questions\n${items}\n`
+const page = (limitations) => `# Tables\n\n## Business rules\n- **A merge is not a delete.** Rule.\n\n## Limitations\n${limitations}\n`
+const backlog = (next, rest = "") => `# Backlog\n\n## Next\n${next}\n## Bugs\n${rest}\n## Cleanups\n\n## To decide\n`
 const TABLES = "openspec/specs/tables/implementation.md"
-const PRINTING = "openspec/specs/printing/implementation.md"
+const BACKLOG = "docs/backlog.md"
+const TABLES_LINK = "../openspec/specs/tables/implementation.md"
 
-test("a backlog line finds its item by title", () => {
+test("a line in Next finds its limitation by title", () => {
   const result = check({
-    [TABLES]: page("- **Limitation:** **No separate payments within a table** (planned). One tab per table.\n"),
-    "docs/backlog.md": "# Backlog\n\n1. [No separate payments within a table](../openspec/specs/tables/implementation.md)\n"
+    [TABLES]: page("- **No separate payments within a table** (planned). One tab per table.\n"),
+    [BACKLOG]: backlog(`1. [No separate payments within a table](${TABLES_LINK})\n`)
   })
   assert.ok(result.ok, result.output)
 })
 
-test("a backlog line whose item was renamed or removed fails", () => {
+test("a line in Next whose limitation was renamed or removed fails", () => {
   const result = check({
-    [TABLES]: page("- **Limitation:** **Split bills** (planned). One tab per table.\n"),
-    "docs/backlog.md": "1. [No separate payments within a table](../openspec/specs/tables/implementation.md)\n"
+    [TABLES]: page("- **Split bills** (planned). One tab per table.\n"),
+    [BACKLOG]: backlog(`1. [No separate payments within a table](${TABLES_LINK})\n`)
   })
   assert.ok(!result.ok)
-  assert.match(result.output, /no item titled "No separate payments within a table"/)
+  assert.match(result.output, /no limitation titled "No separate payments within a table"/)
 })
 
-test("a title is only looked for in the items section, not in bold lead-ins elsewhere", () => {
+test("a title is only looked for under Limitations, not in bold lead-ins elsewhere", () => {
   const result = check({
-    [TABLES]: page("- **Bug:** **Something else.** Text.\n"),
-    "docs/backlog.md": "1. [A merge is not a delete](../openspec/specs/tables/implementation.md)\n"
+    [TABLES]: page("- **Something else.** Text.\n"),
+    [BACKLOG]: backlog(`1. [A merge is not a delete](${TABLES_LINK})\n`)
   })
   assert.ok(!result.ok)
+})
+
+test("a line in Next finds a bug in the backlog's own section", () => {
+  const good = check({
+    [TABLES]: page(""),
+    [BACKLOG]: backlog("1. [Deleting a record in use gives a 500](#bugs)\n", `- **Deleting a record in use gives a 500** (planned). [Tables](${TABLES_LINK}).\n`)
+  })
+  assert.ok(good.ok, good.output)
+
+  const stale = check({ [BACKLOG]: backlog("1. [Deleting a record in use gives a 500](#bugs)\n", "- **Deletes give a 500.** Text.\n") })
+  assert.ok(!stale.ok)
+  assert.match(stale.output, /no bullet titled "Deleting a record in use gives a 500" under "Bugs"/)
+
+  const nowhere = check({ [BACKLOG]: backlog("1. [Deleting a record in use gives a 500](#bug)\n") })
+  assert.ok(!nowhere.ok)
+  assert.match(nowhere.output, /#bug, a section the backlog doesn't have/)
 })
 
 test("titles match with code spans and without a trailing period", () => {
   const result = check({
-    [TABLES]: page("- **Bug:** **`Tab#close` keeps drafts.** Text.\n"),
-    "docs/backlog.md": "1. [`Tab#close` keeps drafts](../openspec/specs/tables/implementation.md)\n"
+    [BACKLOG]: backlog("1. [`Tab#close` keeps drafts](#bugs)\n", "- **`Tab#close` keeps drafts.** Text.\n")
   })
   assert.ok(result.ok, result.output)
 })
 
-test("a pointer needs an item with its title where it points", () => {
-  const items = "- **Bug:** **Deleting a record in use gives a 500.** Most controllers.\n"
-  const good = check({
-    [TABLES]: page("- **Bug:** **Deleting a record in use gives a 500**: see [backlog](../../../docs/backlog.md).\n"),
-    [PRINTING]: page("- **Bug:** **Deleting a record in use gives a 500**: see [backlog](../../../docs/backlog.md).\n"),
-    "docs/backlog.md": `1. ${items.slice(2)}`
-  })
-  assert.ok(good.ok, good.output)
-
-  const stale = check({
-    [TABLES]: page("- **Bug:** **Deleting a record in use gives a 500**: see [printing](../printing/implementation.md).\n"),
-    [PRINTING]: page("- **Bug:** **Deletes give a 500.** Text.\n")
-  })
-  assert.ok(!stale.ok)
-  assert.match(stale.output, /the pointer "Deleting a record in use gives a 500" has no item/)
-})
-
-test("links to changes and to design decisions inside an item aren't pointers", () => {
-  const result = check({
-    [TABLES]: page("- **Bug:** **Drafts outlive tables** (proposed: [fix-drafts](../../changes/fix-drafts/)). (ruled: [decision 4](../../changes/fix-drafts/design.md)).\n"),
-    "openspec/changes/fix-drafts/design.md": "# Design\n"
-  })
+test("new work written in full in Next needs nothing to point to", () => {
+  const result = check({ [BACKLOG]: backlog("1. **Kitchen display.** Orders on a screen.\n") })
   assert.ok(result.ok, result.output)
 })
 
-test("a proposed item whose change was archived is flagged by the broken link", () => {
+test("bold titles inside code blocks are not limitations", () => {
   const result = check({
-    [TABLES]: page("- **Bug:** **Drafts outlive tables** (proposed: [fix-drafts](../../changes/fix-drafts/)).\n")
+    [TABLES]: page("```markdown\n- **Split bills.** Example.\n```\n"),
+    [BACKLOG]: backlog(`1. [Split bills](${TABLES_LINK})\n`)
+  })
+  assert.ok(!result.ok)
+})
+
+test("a proposed limitation whose change was archived is flagged by the broken link", () => {
+  const result = check({
+    [TABLES]: page("- **Drafts outlive tables** (proposed: [fix-drafts](../../changes/fix-drafts/)).\n")
   })
   assert.ok(!result.ok)
   assert.match(result.output, /changes\/fix-drafts\//)
