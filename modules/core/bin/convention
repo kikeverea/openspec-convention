@@ -58,6 +58,7 @@ module Convention
     changed: "changed in the source",
     both: "edited here and changed in the source",
     new: "new in the source",
+    unrecorded: "matches the source, but sync hasn't recorded it",
     missing: "missing here",
     removed: "removed from the source"
   }.freeze
@@ -72,6 +73,7 @@ module Convention
       was = recorded[path]
       state = if was.nil? then :new
       elsif local.nil? then :missing
+      elsif local == hash_of(from) && local != was then :unrecorded
       elsif local != was && hash_of(from) != was then :both
       elsif local != was then :edited
       elsif hash_of(from) != was then :changed
