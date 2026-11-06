@@ -1,0 +1,186 @@
+#!/usr/bin/env ruby
+# frozen_string_literal: true
+
+# Keeps this project's copy of the shared convention (~/RubymineProjects/convention) in step
+# with the source. Run it from the project's root.
+#
+#   bin/convention check              # fail if this project and the source have drifted apart
+#   bin/convention sync [module ...]  # copy the source's files in (and adopt new modules)
+#   bin/convention diff [path ...]    # show how this project's copies differ from the source
+#   bin/convention upstream path ...  # copy files edited here back into the source
+#
+# convention.lock records the adopted modules, the source commit and a hash of every copied
+# file, so `check` can tell the two kinds of drift apart:
+#   - edited here: a project changed its copy. Move the edit to the source (upstream), commit
+#     it there, then sync every project.
+#   - changed in the source: run `bin/convention sync`.
+# Where the source isn't checked out (CI, the server), `check` says so and passes.
+require "digest"
+require "fileutils"
+require "yaml"
+
+module Convention
+  SOURCE = File.expand_path(ENV.fetch("CONVENTION_ROOT", "~/RubymineProjects/convention"))
+  LOCK = "convention.lock"
+  ALWAYS = %w[core].freeze
+
+  module_function
+
+  def run(command, args)
+    case command
+    when "check" then check
+    when "sync" then sync(args)
+    when "diff" then diff(args)
+    when "upstream" then upstream(args)
+    else abort File.read(__FILE__)[/^# Keeps.*?(?=^# convention\.lock)/m].gsub(/^# ?/, "")
+    end
+  end
+
+  def check
+    unless File.directory?(SOURCE)
+      puts "Convention source not found at #{SOURCE}; skipping the check."
+      return
+    end
+    abort "No #{LOCK} here: adopt the convention with `#{SOURCE}/bin/convention sync <module> ...`." unless lock
+
+    problems = drift.map { |path, state| "  #{path}: #{MESSAGES.fetch(state)}" }
+    if problems.empty?
+      puts "Convention is in step with the source (#{lock["modules"].join(", ")})."
+    else
+      abort "Convention drift (source: #{SOURCE}):\n#{problems.join("\n")}\n\n" \
+            "Edited here: move the edit to the source with `bin/convention upstream <path>`, commit it there, then sync.\n" \
+            "Changed in the source: run `bin/convention sync`. `bin/convention diff` shows the differences."
+    end
+  end
+
+  MESSAGES = {
+    edited: "edited here",
+    changed: "changed in the source",
+    both: "edited here and changed in the source",
+    new: "new in the source",
+    missing: "missing here",
+    removed: "removed from the source"
+  }.freeze
+
+  # { "bin/check-links" => :edited, ... } for every file that isn't in step.
+  def drift
+    recorded = lock["files"]
+    source = source_files(lock["modules"])
+
+    states = source.to_h do |path, from|
+      local = hash_of(path)
+      was = recorded[path]
+      state = if was.nil? then :new
+      elsif local.nil? then :missing
+      elsif local != was && hash_of(from) != was then :both
+      elsif local != was then :edited
+      elsif hash_of(from) != was then :changed
+      end
+      [ path, state ]
+    end
+    (recorded.keys - source.keys).each { |path| states[path] = :removed }
+    states.compact
+  end
+
+  def sync(modules)
+    abort "Convention source not found at #{SOURCE}." unless File.directory?(SOURCE)
+    abort "Run sync from a project's root, not from the source." if File.expand_path(Dir.pwd) == SOURCE
+
+    adopted = (ALWAYS + (lock&.fetch("modules") || []) + modules).uniq
+    unknown = adopted - available_modules
+    abort "Unknown module(s): #{unknown.join(", ")}. Available: #{available_modules.join(", ")}." if unknown.any?
+
+    force = ENV["FORCE"] == "1"
+    recorded = lock&.fetch("files") || {}
+    files = source_files(adopted)
+
+    # A copy edited here would be overwritten: stop, unless it's the first adoption with FORCE=1.
+    conflicts = files.keys.select do |path|
+      local = hash_of(path)
+      local && local != hash_of(files[path]) && local != recorded[path]
+    end
+    if conflicts.any? && !force
+      abort "These files differ from the source and weren't copied from it:\n" +
+            conflicts.map { |path| "  #{path}" }.join("\n") +
+            "\n\nMove what's worth keeping to the source (bin/convention upstream), or overwrite them with FORCE=1."
+    end
+
+    files.each do |path, from|
+      next if hash_of(path) == hash_of(from)
+
+      FileUtils.mkdir_p(File.dirname(path))
+      FileUtils.cp(from, path)
+      FileUtils.chmod(File.stat(from).mode & 0o777, path)
+      puts "  copied #{path}"
+    end
+    (recorded.keys - files.keys).each do |path|
+      if hash_of(path) == recorded[path]
+        File.delete(path)
+        puts "  removed #{path} (no longer in the source)"
+      elsif File.exist?(path)
+        puts "  kept #{path}: no longer in the source, but edited here"
+      end
+    end
+
+    File.write(LOCK, <<~YAML + { "files" => files.keys.sort.to_h { |path| [ path, hash_of(path) ] } }.to_yaml.sub(/\A---\n/, ""))
+      # Written by bin/convention sync; don't edit by hand.
+      source: #{SOURCE.sub(Dir.home, "~")}
+      commit: #{source_commit}
+      modules: [#{adopted.join(", ")}]
+    YAML
+    puts "Convention synced (#{adopted.join(", ")}) at #{source_commit}."
+  end
+
+  def diff(paths)
+    abort "Convention source not found at #{SOURCE}." unless File.directory?(SOURCE)
+    files = source_files(lock ? lock["modules"] : available_modules)
+    paths = drift.keys if paths.empty? && lock
+    paths.each do |path|
+      from = files[path] or next puts("#{path}: not part of the convention")
+      system("diff", "-u", "--label", "source/#{path}", "--label", path, from, path)
+    end
+  end
+
+  def upstream(paths)
+    abort "Convention source not found at #{SOURCE}." unless File.directory?(SOURCE)
+    abort "Name the files to copy back to the source." if paths.empty?
+    files = source_files(lock ? lock["modules"] : available_modules)
+    paths.each do |path|
+      to = files[path] or abort "#{path} is not part of the convention."
+      FileUtils.cp(path, to)
+      puts "  #{path} -> #{to}"
+    end
+    puts "Now review and commit them in #{SOURCE}, then run `bin/convention sync` here and in the other projects."
+  end
+
+  # { "bin/check-links" => "<source>/modules/docs-checks/bin/check-links", ... }
+  def source_files(modules)
+    modules.flat_map do |name|
+      root = File.join(SOURCE, "modules", name)
+      Dir.glob("**/*", File::FNM_DOTMATCH, base: root)
+         .reject { |path| File.directory?(File.join(root, path)) || File.basename(path).start_with?(".") }
+         .map { |path| [ path, File.join(root, path) ] }
+    end.to_h
+  end
+
+  def available_modules
+    Dir.children(File.join(SOURCE, "modules")).sort
+  end
+
+  def lock
+    @lock ||= File.exist?(LOCK) ? YAML.safe_load_file(LOCK) : nil
+  end
+
+  def hash_of(path)
+    File.file?(path) ? Digest::SHA256.file(path).hexdigest[0, 16] : nil
+  end
+
+  def source_commit
+    commit = `git -C #{SOURCE} rev-parse --short HEAD 2>/dev/null`.strip
+    commit = "uncommitted" if commit.empty?
+    dirty = !`git -C #{SOURCE} status --porcelain -- modules 2>/dev/null`.strip.empty?
+    dirty ? "#{commit}+uncommitted" : commit
+  end
+end
+
+Convention.run(ARGV.first, ARGV.drop(1))

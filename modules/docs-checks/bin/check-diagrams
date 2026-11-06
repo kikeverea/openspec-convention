@@ -1,0 +1,84 @@
+#!/usr/bin/env node
+// Renders every Mermaid diagram (*.mmd) under openspec/ and docs/, or the files and folders
+// given as arguments, and fails if any of them doesn't render.
+//
+// Obsidian doesn't draw diagrams with Mermaid but with its own Mermaid-compatible renderer,
+// Pele. vendor/pele/ holds the exact build the user's Obsidian ships (lib/pele.min.js in its
+// app bundle), so a diagram that passes here renders in Obsidian. When Obsidian updates Pele,
+// copy the new build over and rename it after its version. Run locally (not in CI), it warns when
+// the installed Obsidian ships a different Pele than vendor/pele/.
+//
+//   bin/check-diagrams                                  # everything
+//   bin/check-diagrams openspec/changes/<change>        # one change
+import fs from "node:fs"
+import os from "node:os"
+import path from "node:path"
+import { fileURLToPath } from "node:url"
+import vm from "node:vm"
+
+const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..")
+const peleFile = fs.readdirSync(path.join(root, "vendor/pele")).find((name) => name.endsWith(".min.js"))
+const context = vm.createContext({})
+vm.runInContext(`${fs.readFileSync(path.join(root, "vendor/pele", peleFile), "utf8")}\nglobalThis.pele = pele`, context)
+const { pele } = context
+
+function diagramsIn(target) {
+  if (!fs.existsSync(target)) return []
+  if (!fs.statSync(target).isDirectory()) return target.endsWith(".mmd") ? [ target ] : []
+
+  return fs.readdirSync(target, { withFileTypes: true }).flatMap((entry) => {
+    if (entry.name.startsWith(".") || entry.name === "node_modules") return []
+    return diagramsIn(path.join(target, entry.name))
+  })
+}
+
+const targets = process.argv.length > 2 ? process.argv.slice(2) : [ "openspec", "docs" ].map((dir) => path.join(root, dir))
+const files = targets.flatMap((target) => diagramsIn(path.resolve(target))).sort()
+
+const failures = files.flatMap((file) => {
+  try {
+    pele.render(fs.readFileSync(file, "utf8"))
+    return []
+  } catch (error) {
+    return [ `${path.relative(root, file)}\n${error.message.replace(/^/gm, "    ")}` ]
+  }
+})
+
+// Obsidian runs the newest app bundle it has: an update in its config folder, or the installed one.
+function obsidianPele() {
+  const home = os.homedir()
+  const configs = [ ".config/obsidian", "Library/Application Support/obsidian", "AppData/Roaming/obsidian" ]
+  const updates = configs.flatMap((dir) => {
+    const folder = path.join(home, dir)
+    if (!fs.existsSync(folder)) return []
+    return fs.readdirSync(folder).filter((name) => /^obsidian-[\d.]+\.asar$/.test(name)).map((name) => path.join(folder, name))
+  })
+  const version = (file) => (path.basename(file).match(/[\d.]+(?=\.asar$)/)?.[0] ?? "0").split(".").map(Number)
+  const newestFirst = updates.sort((a, b) => {
+    const [ x, y ] = [ version(a), version(b) ]
+    return y.map((part, i) => part - (x[i] ?? 0)).find((diff) => diff !== 0) ?? 0
+  })
+  const bundles = [ ...newestFirst, "/opt/Obsidian/resources/obsidian.asar", "/Applications/Obsidian.app/Contents/Resources/obsidian.asar" ]
+
+  for (const bundle of bundles.filter((file) => fs.existsSync(file))) {
+    const banner = fs.readFileSync(bundle).toString("latin1").match(/\/\*! Pele ([\d.]+)/)
+    if (banner) return { version: banner[1], bundle }
+  }
+  return null
+}
+
+if (!process.env.CI) {
+  const installed = obsidianPele()
+  const vendored = peleFile.match(/pele-([\d.]+)\.min\.js/)?.[1]
+  if (installed && installed.version !== vendored) {
+    console.warn(`Warning: Obsidian ships Pele ${installed.version} (${installed.bundle}) but vendor/pele/ has ${vendored}.`)
+    console.warn(`Copy its lib/pele.min.js to vendor/pele/pele-${installed.version}.min.js and remove the old one.\n`)
+  }
+}
+
+if (failures.length > 0) {
+  console.error(`${failures.length} of ${files.length} diagrams don't render (${peleFile}):\n\n${failures.join("\n\n")}`)
+  process.exit(1)
+}
+
+console.log(`All ${files.length} diagrams render (${peleFile}).`)

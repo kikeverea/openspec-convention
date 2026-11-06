@@ -1,0 +1,57 @@
+#!/usr/bin/env node
+// Checks that every relative link in the Markdown docs points to a file that exists: AGENTS.md
+// and every *.md under openspec/ and docs/, or the files and folders given as arguments.
+// Web links, mailto: and in-page anchors are skipped; so are links inside code blocks and spans.
+//
+// It catches a link to a change that was archived (changes/<change>/ instead of
+// changes/archive/<date>-<change>/), a diagram that was never copied into a spec, and typos.
+//
+//   bin/check-links                                     # everything
+//   bin/check-links openspec/changes/<change>           # one change
+import fs from "node:fs"
+import path from "node:path"
+import { fileURLToPath } from "node:url"
+
+const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..")
+
+function markdownIn(target) {
+  if (!fs.existsSync(target)) return []
+  if (!fs.statSync(target).isDirectory()) return target.endsWith(".md") ? [ target ] : []
+
+  return fs.readdirSync(target, { withFileTypes: true }).flatMap((entry) => {
+    if (entry.name.startsWith(".") || entry.name === "node_modules") return []
+    return markdownIn(path.join(target, entry.name))
+  })
+}
+
+// Links as written, without the code that only looks like one.
+function linksIn(text) {
+  const prose = text
+    .replace(/^(`{3,}|~{3,})[^\n]*\n[\s\S]*?^\1[^\n]*$/gm, "")
+    .replace(/(?<!\[)(`+)[^`\n]+?\1(?!\])/g, "")
+
+  return [ ...prose.matchAll(/\]\(\s*(<[^>]*>|[^)\s]+)/g) ].map((match) => match[1].replace(/^<|>$/g, ""))
+}
+
+const external = /^([a-z][a-z0-9+.-]*:|#)/i
+const defaults = [ "AGENTS.md", "openspec", "docs" ].map((target) => path.join(root, target))
+const targets = process.argv.length > 2 ? process.argv.slice(2) : defaults
+const files = targets.flatMap((target) => markdownIn(path.resolve(target))).sort()
+
+let count = 0
+const broken = files.flatMap((file) => {
+  const links = linksIn(fs.readFileSync(file, "utf8")).filter((link) => !external.test(link))
+  count += links.length
+
+  return links.flatMap((link) => {
+    const target = path.resolve(path.dirname(file), decodeURIComponent(link.replace(/[#?].*$/, "")))
+    return fs.existsSync(target) ? [] : [ `${path.relative(root, file)}: ${link}` ]
+  })
+})
+
+if (broken.length > 0) {
+  console.error(`${broken.length} of ${count} links in ${files.length} files point to nothing:\n\n${broken.join("\n")}`)
+  process.exit(1)
+}
+
+console.log(`All ${count} links in ${files.length} files resolve.`)
