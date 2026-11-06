@@ -21,7 +21,7 @@ function check(files) {
 }
 
 const page = (limitations) => `# Tables\n\n## Business rules\n- **A merge is not a delete.** Rule.\n\n## Limitations\n${limitations}\n`
-const backlog = (next, rest = "") => `# Backlog\n\n## Next\n${next}\n## Bugs\n${rest}\n## Cleanups\n\n## To decide\n`
+const backlog = (next, rest = "", working = "") => `# Backlog\n\n## Working on\n${working}\n## Next\n${next}\n## Bugs\n${rest}\n## Cleanups\n\n## To decide\n`
 const TABLES = "openspec/specs/tables/implementation.md"
 const BACKLOG = "docs/backlog.md"
 const TABLES_LINK = "../openspec/specs/tables/implementation.md"
@@ -87,10 +87,29 @@ test("bold titles inside code blocks are not limitations", () => {
   assert.ok(!result.ok)
 })
 
-test("a proposed limitation whose change was archived is flagged by the broken link", () => {
+test("a line in Working on finds its item and links its change", () => {
+  const working = `- [Split bills](${TABLES_LINK}): [split-tabs](../openspec/changes/split-tabs/)\n`
+  const good = check({
+    [TABLES]: page("- **Split bills.** One tab per table.\n"),
+    [BACKLOG]: backlog("", "", working),
+    "openspec/changes/split-tabs/proposal.md": "# Split tabs\n"
+  })
+  assert.ok(good.ok, good.output)
+
+  const renamed = check({
+    [TABLES]: page("- **No split bills.** One tab per table.\n"),
+    [BACKLOG]: backlog("", "", working),
+    "openspec/changes/split-tabs/proposal.md": "# Split tabs\n"
+  })
+  assert.ok(!renamed.ok)
+  assert.match(renamed.output, /no limitation titled "Split bills"/)
+})
+
+test("a line in Working on that the archive forgot is flagged by its change's broken link", () => {
   const result = check({
-    [TABLES]: page("- **Drafts outlive tables** (proposed: [fix-drafts](../../changes/fix-drafts/)).\n")
+    [TABLES]: page("- **Split bills.** One tab per table.\n"),
+    [BACKLOG]: backlog("", "", `- [Split bills](${TABLES_LINK}): [split-tabs](../openspec/changes/split-tabs/)\n`)
   })
   assert.ok(!result.ok)
-  assert.match(result.output, /changes\/fix-drafts\//)
+  assert.match(result.output, /changes\/split-tabs\//)
 })

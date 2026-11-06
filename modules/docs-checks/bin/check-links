@@ -6,8 +6,9 @@
 // It catches a link to a change that was archived (changes/<change>/ instead of
 // changes/archive/<date>-<change>/), a diagram that was never copied into a spec, and typos.
 //
-// It also checks that the backlog's "Next" still finds what it orders (see "Limitations and the
-// backlog" in CONVENTION.md). A line `1. [Short title](…/implementation.md)` needs a bullet titled
+// It also checks that every line in the backlog's "Working on" and "Next" still finds its item (see
+// "Limitations and the backlog" in CONVENTION.md). A line `1. [Short title](…/implementation.md)` or
+// `- [Short title](…/implementation.md): [change](…)` needs a bullet titled
 // `**Short title**` in that page's "Limitations" section; `1. [Short title](#bugs)` needs one in the
 // backlog's own section with that anchor. Titles are compared as written, code spans included,
 // ignoring a trailing period.
@@ -20,9 +21,9 @@ import { fileURLToPath } from "node:url"
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..")
 const LIMITATIONS = "Limitations"
-const NEXT = "Next"
+const PLANNING = [ "Working on", "Next" ]
 const TITLED = /^\s*[-*]\s+\*\*(.+?)\*\*/
-const NEXT_LINE = /^\s*\d+\.\s+\[([^\]]+)\]\(\s*<?([^)\s>]+)>?\s*\)/
+const PLANNING_LINE = /^\s*(?:[-*]|\d+\.)\s+\[([^\]]+)\]\(\s*<?([^)\s>]+)>?\s*\)/
 
 function markdownIn(target) {
   if (!fs.existsSync(target)) return []
@@ -67,12 +68,12 @@ const titlesIn = (section) => new Set((section?.lines ?? []).map((line) => line.
 const resolve = (from, link) => path.resolve(path.dirname(from), decodeURIComponent(link.replace(/[#?].*$/, "")))
 const shown = (file) => path.relative(process.cwd(), file)
 
-// Each line in the backlog's Next must find what it orders.
-function unresolvedNext(file) {
+// Each line in the backlog's Working on and Next must find its item.
+function unresolvedPlanning(file) {
   if (!isBacklog(file)) return []
 
-  return (sections(file).get(anchor(NEXT))?.lines ?? []).flatMap((line) => {
-    const match = line.match(NEXT_LINE)
+  return PLANNING.flatMap((name) => sections(file).get(anchor(name))?.lines ?? []).flatMap((line) => {
+    const match = line.match(PLANNING_LINE)
     if (!match) return []
     const [ , text, link ] = match
     const title = normalize(text)
@@ -104,10 +105,10 @@ const broken = files.flatMap((file) => {
 
   return links.flatMap((link) => (fs.existsSync(resolve(file, link)) ? [] : [ `${shown(file)}: ${link}` ]))
 })
-const untitled = files.flatMap(unresolvedNext)
+const untitled = files.flatMap(unresolvedPlanning)
 
 if (broken.length > 0) console.error(`${broken.length} of ${count} links in ${files.length} files point to nothing:\n\n${broken.join("\n")}\n`)
-if (untitled.length > 0) console.error(`${untitled.length} lines in the backlog's Next don't find what they order:\n\n${untitled.join("\n")}\n`)
+if (untitled.length > 0) console.error(`${untitled.length} lines in the backlog's Working on and Next don't find their item:\n\n${untitled.join("\n")}\n`)
 if (broken.length > 0 || untitled.length > 0) process.exit(1)
 
 console.log(`All ${count} links in ${files.length} files resolve.`)
