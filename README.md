@@ -34,6 +34,7 @@ If the project already has its own copies, sync lists the ones that differ and s
    Claude Code asks once to allow an import from outside the project.
 2. Trim `AGENTS.md` to what's specific to the project: what it is, the stack and commands, what counts as operations, which surfaces are in the users' language and the English names of domain terms, extra feature page sections, extra files never to commit, and any rule it deliberately changes.
 3. Run `bin/convention check` from `bin/ci` (or whatever the project runs before pushing). It passes where the source isn't checked out, such as GitHub CI.
+   Run `bin/check-diagrams` and `bin/check-links` in GitHub CI too, in a job with `actions/setup-node` set to Node 22.12 or newer: the runner's default Node may be older.
 4. Commit `convention.lock` and the copied files.
 
 The scripts need Ruby (`bin/convention`) and Node 22.12 or newer (`bin/check-diagrams`, `bin/check-links`; they use ES modules and no packages).
@@ -46,6 +47,8 @@ Ask the user first: a change here changes every project.
 2. `bin/convention upstream <path>` copies it into `modules/`. Commit it here.
 3. `bin/convention sync` in that project, then in the others (or ask their sessions to). Until they do, their `bin/convention check` fails with "changed in the source".
 
-For `CONVENTION.md`, edit it here directly: every project reads it at once.
+For `CONVENTION.md`, edit it here directly: every project reads it at once. Agree it with the user, and with the other projects' sessions only when the user asks; then tell those sessions to adopt it.
+
+The convention's own tests cover `bin/check-links`: `node --test test/*.test.mjs`. The generator is tested in each project (`test/lib/model_docs_test.rb`), against its own models; lint shared Ruby with a project's `bin/rubocop` before upstreaming.
 
 When Obsidian updates Pele, `bin/check-diagrams` warns. Copy Obsidian's `lib/pele.min.js` to `modules/docs-checks/vendor/pele/pele-<version>.min.js`, delete the old one, run `bin/check-diagrams` in each project, and sync.

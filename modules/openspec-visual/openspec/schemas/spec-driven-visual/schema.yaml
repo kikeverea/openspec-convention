@@ -178,7 +178,11 @@ artifacts:
       - **Goals / Non-Goals**: What this design achieves and explicitly excludes. Don't restate the proposal's scope - add only design-level boundaries.
       - **Decisions**: Key technical choices with rationale (why X over Y?). Include alternatives considered for each decision.
       - **Risks / Trade-offs**: Known limitations, things that could go wrong. Format: [Risk] → Mitigation
-      - **Migration Plan**: Steps to deploy, rollback strategy (if applicable)
+      - **Migration Plan**: Only the order the software needs to ship in (a
+        data migration before the code that reads it, what must deploy
+        together, what a rollback must undo in the code). Steps done by hand
+        are operations: link their runbook, never write them here. Omit if
+        the change ships in one step.
       - **Open Questions**: Unknowns that can safely be answered later without
         changing the specs, the approach, or the task breakdown. Omit if none.
 

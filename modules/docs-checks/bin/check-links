@@ -6,6 +6,13 @@
 // It catches a link to a change that was archived (changes/<change>/ instead of
 // changes/archive/<date>-<change>/), a diagram that was never copied into a spec, and typos.
 //
+// It also checks that links to items still find them (see "Items" in CONVENTION.md). An item is
+// a bullet like `- **Bug:** **Short title.** …` in a feature page's "Limitations, bugs and open
+// questions" section, or anywhere in docs/backlog.md. Then:
+//   - a backlog line `1. [Short title](…/implementation.md)` needs an item with that title there;
+//   - a pointer (an item linking to another page's items) needs its own title on that page.
+// Titles are compared as written, code spans included, ignoring a trailing period.
+//
 //   bin/check-links                                     # everything
 //   bin/check-links openspec/changes/<change>           # one change
 import fs from "node:fs"
@@ -13,6 +20,9 @@ import path from "node:path"
 import { fileURLToPath } from "node:url"
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..")
+const ITEMS_SECTION = "Limitations, bugs and open questions"
+const ITEM = /^\s*(?:[-*]|\d+\.)\s+\*\*(?:Limitation|Bug|Question|Cleanup):\*\*\s+\*\*(.+?)\*\*/
+const BACKLOG_LINE = /^\s*\d+\.\s+\[([^\]]+)\]\(\s*<?([^)\s>]+)>?\s*\)/
 
 function markdownIn(target) {
   if (!fs.existsSync(target)) return []
@@ -24,13 +34,67 @@ function markdownIn(target) {
   })
 }
 
+const withoutCodeBlocks = (text) => text.replace(/^(`{3,}|~{3,})[^\n]*\n[\s\S]*?^\1[^\n]*$/gm, "")
+
 // Links as written, without the code that only looks like one.
 function linksIn(text) {
-  const prose = text
-    .replace(/^(`{3,}|~{3,})[^\n]*\n[\s\S]*?^\1[^\n]*$/gm, "")
-    .replace(/(?<!\[)(`+)[^`\n]+?\1(?!\])/g, "")
-
+  const prose = withoutCodeBlocks(text).replace(/(?<!\[)(`+)[^`\n]+?\1(?!\])/g, "")
   return [ ...prose.matchAll(/\]\(\s*(<[^>]*>|[^)\s]+)/g) ].map((match) => match[1].replace(/^<|>$/g, ""))
+}
+
+const normalize = (title) => title.trim().replace(/\.$/, "").trim()
+const isBacklog = (file) => path.basename(file) === "backlog.md" && path.basename(path.dirname(file)) === "docs"
+const holdsItems = (file) => isBacklog(file) || path.basename(file) === "implementation.md"
+
+// The lines that may hold items: a feature page's items section, or the whole backlog.
+function itemLines(file) {
+  const lines = withoutCodeBlocks(fs.readFileSync(file, "utf8")).split("\n")
+  if (isBacklog(file)) return lines
+
+  const start = lines.findIndex((line) => line.trim() === `## ${ITEMS_SECTION}`)
+  if (start === -1) return []
+  const end = lines.findIndex((line, i) => i > start && /^## /.test(line))
+  return lines.slice(start + 1, end === -1 ? undefined : end)
+}
+
+const titleCache = new Map()
+function titlesIn(file) {
+  if (!titleCache.has(file)) {
+    titleCache.set(file, new Set(itemLines(file).map((line) => line.match(ITEM)?.[1]).filter(Boolean).map(normalize)))
+  }
+  return titleCache.get(file)
+}
+
+const resolve = (from, link) => path.resolve(path.dirname(from), decodeURIComponent(link.replace(/[#?].*$/, "")))
+const shown = (file) => path.relative(process.cwd(), file)
+
+function missingTitles(file) {
+  if (!holdsItems(file)) return []
+  const lines = itemLines(file)
+  const where = (target) => (isBacklog(target) ? shown(target) : `the "${ITEMS_SECTION}" section of ${shown(target)}`)
+
+  const backlogLines = isBacklog(file)
+    ? lines.flatMap((line) => {
+      const match = line.match(BACKLOG_LINE)
+      if (!match || external.test(match[2])) return []
+      const target = resolve(file, match[2])
+      if (!fs.existsSync(target) || !holdsItems(target) || titlesIn(target).has(normalize(match[1]))) return []
+      return [ `${shown(file)}: no item titled "${normalize(match[1])}" in ${where(target)}` ]
+    })
+    : []
+
+  const pointers = lines.flatMap((line) => {
+    const title = line.match(ITEM)?.[1]
+    if (!title) return []
+    return linksIn(line).filter((link) => !external.test(link)).flatMap((link) => {
+      const target = resolve(file, link)
+      if (target === file || !fs.existsSync(target) || fs.statSync(target).isDirectory() || !holdsItems(target)) return []
+      if (titlesIn(target).has(normalize(title))) return []
+      return [ `${shown(file)}: the pointer "${normalize(title)}" has no item with that title in ${where(target)}` ]
+    })
+  })
+
+  return [ ...backlogLines, ...pointers ]
 }
 
 const external = /^([a-z][a-z0-9+.-]*:|#)/i
@@ -43,15 +107,12 @@ const broken = files.flatMap((file) => {
   const links = linksIn(fs.readFileSync(file, "utf8")).filter((link) => !external.test(link))
   count += links.length
 
-  return links.flatMap((link) => {
-    const target = path.resolve(path.dirname(file), decodeURIComponent(link.replace(/[#?].*$/, "")))
-    return fs.existsSync(target) ? [] : [ `${path.relative(root, file)}: ${link}` ]
-  })
+  return links.flatMap((link) => (fs.existsSync(resolve(file, link)) ? [] : [ `${shown(file)}: ${link}` ]))
 })
+const untitled = files.flatMap(missingTitles)
 
-if (broken.length > 0) {
-  console.error(`${broken.length} of ${count} links in ${files.length} files point to nothing:\n\n${broken.join("\n")}`)
-  process.exit(1)
-}
+if (broken.length > 0) console.error(`${broken.length} of ${count} links in ${files.length} files point to nothing:\n\n${broken.join("\n")}\n`)
+if (untitled.length > 0) console.error(`${untitled.length} links to items don't find their item:\n\n${untitled.join("\n")}\n`)
+if (broken.length > 0 || untitled.length > 0) process.exit(1)
 
 console.log(`All ${count} links in ${files.length} files resolve.`)

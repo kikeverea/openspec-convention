@@ -6,7 +6,7 @@ These are the rules every project shares: how work is planned in OpenSpec, how i
 
 OpenSpec changes, specs and tasks describe **what the software does and how it's built**. Operations — hardware, servers, networks, accounts, deploys, production data steps, anything done by hand outside the code — never become specs, tasks or design decisions in a change. They live in the project's runbooks (`docs/operations/`) and `docs/architecture/`. Each project's `AGENTS.md` lists what counts as operations there.
 
-**Development never waits on operations.** No task, requirement or "done" criterion may depend on a physical device, a site visit, production access or an account being set up. Verify software locally (tests, CI, throwaway environments); operations happen independently, from the runbooks.
+**Development never waits on operations.** No task, requirement or "done" criterion may depend on a physical device, a site visit, production access, or a third-party service or account (paid or not) being set up or reachable: tests stub them. Verify software locally (tests, CI, throwaway environments); operations happen independently, from the runbooks.
 
 ## Everything in English
 
@@ -34,11 +34,19 @@ Propose (all artifacts) → apply, only when the user asks → archive. Proposin
 
 During apply, a decision the design didn't cover goes into `design.md` marked "decided during apply", and the affected specs, diagrams and tasks are fixed in the same pass, so the change stays consistent with what was built.
 
-Archiving follows the `operations.archive.guidance` in `openspec/config.yaml` (diagrams, spec links, change links, validation).
+Archiving follows the `operations.archive.guidance` in `openspec/config.yaml` (diagrams, spec links, change links, items the change built, validation).
+
+## Exploration is not a change
+
+Surveys, measurements and experiments happen in explore mode (`/opsx:explore`) and in scratch scripts under `tmp/` until the approach is settled; then it becomes a proposal. A measurement often exists before any change and serves several.
+
+A design that rests on a measurement quotes the number, says which database it came from (development and production can differ: engine, data, query plans), and keeps the script that produced it: copy it into each change that quotes it, under `openspec/changes/<change>/measurements/`. The script's header names its inputs (the database, and any files outside git), so it can be re-run against development. Keep the scripts and the numbers, never their outputs: outputs can hold real data. CI never re-runs them.
 
 ## Specs say what was decided
 
-A requirement states a behavior the user decided or confirmed, not merely what the code happens to do. Each requirement rests on one of: a ruling by the user, a test that asserts it, or behavior the code states plainly (a validation and its message, a guard with its reason). Behavior whose intent is unclear is **asked**, never written as SHALL: it could be an accident or a bug. A bug found this way goes to the project's backlog, not into the spec.
+A requirement states a behavior the user decided or confirmed, not merely what the code happens to do. Each requirement rests on one of: a ruling by the user, a test that asserts it, or behavior the code states plainly (a validation and its message, a guard with its reason). Behavior whose intent is unclear is **asked**, never written as SHALL: it could be an accident or a bug. A bug found this way becomes a Bug item on the feature page, not part of the spec.
+
+A spec written from existing code (documenting a feature that was built before OpenSpec) states only what passes this rule. Everything else goes on the feature page as a Question, to be asked.
 
 ## Documentation is part of the change
 
@@ -54,7 +62,7 @@ Each app-level OpenSpec capability has one page, `implementation.md`, in the sam
 4. **Business rules**: the non-obvious ones, with the why.
 5. **Code map**: controllers, models, pages, jobs, scripts, tests (paths).
 6. **Spec and history**: link to the OpenSpec spec and the changes that shaped it.
-7. **Limitations / open questions**.
+7. **Limitations, bugs and open questions**: the feature's items (see below). Always the last section.
 
 A project may add sections (an API section, a code map per repo); its `AGENTS.md` says which. `docs/README.md` maps every capability to its page. Don't add `README.md` files to capability folders; the feature page is `implementation.md`.
 
@@ -78,10 +86,33 @@ Diagram: [data model](diagrams/data-model.mmd) (generated from the models).
 
 ## Business rules
 ## Code map
-## Limitations and open questions
+## Limitations, bugs and open questions
 ```
 
-**Changing an existing feature.** In the same change: update the flows, business rules, code map and limitations; append the change name to **Changes**; update the hand-written *Meaning and rules* of every model page you touched. `docs:check` only guards the generated parts. Keeping the hand-written parts true is your job.
+**Changing an existing feature.** In the same change: update the flows, business rules, code map and items; append the change name to **Changes**; update the hand-written *Meaning and rules* of every model page you touched. `docs:check` only guards the generated parts. Keeping the hand-written parts true is your job.
+
+### Items: limitations, bugs, questions and the backlog
+
+What a feature doesn't do, what's wrong with it and what's still to settle lives **once**, on the feature's page, in its last section. The backlog only orders it. Every item is one bullet that starts with its kind and a short bold title:
+
+```markdown
+## Limitations, bugs and open questions
+- **Limitation:** **No separate payments within a table** (planned). A table has one tab; moving items to another table is the workaround.
+- **Bug:** **A draft can outlive its table.** A draft left on a device that's never reopened stays in its storage.
+- **Question:** **Can a merge be extended?** Today it has to be undone first.
+- **Cleanup:** **Unused `legacy_code` column.** Nothing reads it since the import was retired.
+```
+
+- **Kinds.** *Limitation*: something the feature doesn't do. *Bug*: it does something wrong. *Question*: behavior whose intent isn't settled; ask the user. *Cleanup*: dead code, a stale column, an outdated comment or note; users see nothing wrong and nothing is missing. A Bug that contradicts an explicit ruling by the user says so after its title, quoting the ruling with its date or linking where it was recorded: `(ruled 2026-11-05: "…")` or `(ruled: [design decision 4](…/design.md))`.
+- **Titles** are short and stable: they're how backlog lines and pointers find the item, and `bin/check-links` checks that every one still resolves. Renaming an item means updating its backlog line and pointers in the same change.
+- **State.** An item is plain until it's planned. `(planned)` after the title means it has a line in the backlog. `(proposed: [<change>](../../changes/<change>/))` means a change is working on it. An abandoned proposal goes back to `(planned)`.
+- **Removal.** The change that builds or fixes an item removes its bullet, its pointers and its backlog line when it's archived, not before: until then the item is still true of the shipped code. A `(proposed: …)` link that broke at archive marks an item the archive forgot.
+- **Items spanning features.** An item has one description. When one feature is clearly the one it mainly changes, it lives there. When none is (it touches most controllers, say), it's written in full in the backlog. Every other affected page carries a pointer: a bullet with the same kind and title and a link to where it's described, e.g. `- **Bug:** **Deleting a record in use gives a 500**: see [backlog](../../../docs/backlog.md).` An item links to another feature page or to the backlog only as a pointer, so `bin/check-links` can tell when the item it points to is gone.
+- **No page yet.** An item about a capability whose page doesn't exist yet goes in the backlog in full, and moves onto the page when it's written.
+- **Questions** are never ordered in the backlog. Their fixed prefix keeps them in one search: `grep -rn -- "- \*\*Question:\*\*" openspec/specs docs`.
+- **Not items.** Steps owed on production (a data fix, a password to set) are operations: they go in a runbook, never on a page or in the backlog.
+
+**The backlog** (`docs/backlog.md`, linked from `docs/README.md`) is the order of what comes next, decided by the user. Each line is a link whose text is the item's title, pointing to the page that describes it: `1. [No separate payments within a table](../openspec/specs/table-service/implementation.md)`. Its only descriptions are the items that have no page to live on, written as numbered items in the same format (`2. **Bug:** **Deleting a record in use gives a 500.** …`).
 
 **Spec and change links.** The feature page links to `spec.md` in its own folder. While a change that creates the capability is in progress, link to the delta spec inside `openspec/changes/<change>/specs/` instead, and switch to `spec.md` when the change is archived. **Changes** link to `../../changes/<change>/` while the change is in progress and to `../../changes/archive/<date>-<change>/` once it's archived.
 
@@ -146,6 +177,7 @@ Design decisions live in each OpenSpec change's `design.md` (archived with the c
 - [ ] `bin/check-diagrams` and `bin/check-links` pass
 - [ ] Architecture diagrams updated if the architecture changed (planned vs implemented marked)
 - [ ] Runbook added or updated for any operations step the change needs
+- [ ] Items the change found are on their pages; items it builds are marked `(proposed: …)` and come off at archive
 
 ## Tests
 
@@ -164,3 +196,4 @@ The shared files live in `~/RubymineProjects/convention`: this file, and the mod
 - **When the source moves on,** `bin/convention check` fails with "changed in the source": run `bin/convention sync` and commit the result with the change that needs it, or on its own.
 - **This file** is imported directly, never copied, so a change here reaches every project at once. Keep project specifics out of it: they belong in the project's `AGENTS.md`.
 - Ask the user before changing the convention: it changes how every project works.
+- **Other projects' sessions** are asked only when the user asks; what they reply is input for the user, never a decision. A change agreed this way is written here, and each project adopts it from its own session.
