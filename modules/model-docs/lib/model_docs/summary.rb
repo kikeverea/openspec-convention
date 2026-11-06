@@ -35,19 +35,6 @@ module ModelDocs
         MD
       end
 
-      def subclasses
-        return if model.descendants.empty?
-
-        section("Subclasses", model.descendants.map(&:name).sort.map { |name| "- `#{name}` (single-table, `#{model.inheritance_column}` = `#{name}`)" })
-      end
-
-      # PostgreSQL (test, production) rewrites a partial index's condition as
-      # "((status)::text = 'pending'::text)"; SQLite (development) keeps it as written.
-      # Both become "status = 'pending'", as in db/schema.rb.
-      def condition(where)
-        where.gsub(/::\w+(?: varying)?/, "").gsub(/\((\w+)\)/, '\1').sub(/\A\((.*)\)\z/, '\1')
-      end
-
       def default(column)
         column.default.nil? ? "" : "`#{column.default}`"
       end
@@ -58,8 +45,8 @@ module ModelDocs
           notes << (index.where ? "unique where `#{condition(index.where)}`" : "unique")
         end
         notes << "indexed" if indexed_columns.include?(column.name) && !unique_columns.include?(column.name)
-        if (association = belongs_to_by_foreign_key[column.name])
-          notes << "→ #{model_link(association.klass, association.klass.name)}"
+        if (association = belongs_to_by_foreign_key[column.name]) && (klass = ModelDocs.klass_of(association))
+          notes << "→ #{model_link(klass, klass.name)}"
         end
         notes << "enum: #{model.defined_enums[column.name].keys.join(", ")}" if model.defined_enums.key?(column.name)
         if column.name.end_with?("_digest")
@@ -69,8 +56,8 @@ module ModelDocs
         notes
       end
 
-      def associations
-        items = model.reflect_on_all_associations.map do |association|
+      def associations(of = model, except: [])
+        items = (of.reflect_on_all_associations - except).map do |association|
           options = association.options.slice(*ASSOCIATION_OPTIONS).map { |key, value| "#{key}: #{value.inspect.delete_prefix(":")}" }
           options.unshift("polymorphic") if association.polymorphic?
           "- #{association.macro} #{association_target(association)}#{" (#{options.join(", ")})" if options.any?}"
@@ -85,18 +72,39 @@ module ModelDocs
         section("Enums", rows, "| Attribute | Values |\n|---|---|")
       end
 
-      def validations
-        rows = model.validators.map do |validator|
+      def validations(of = model, except: [])
+        rows = (of.validators - except).map do |validator|
           options = validator.options.except(:message).map { |key, value| "#{key}: #{describe(value)}" }
           "| #{validator.attributes.map { |attribute| attribute_link(attribute) }.join(", ")} | #{validator.kind} | #{options.join(", ")} |"
         end
         section("Validations", rows, "| Attribute | Rule | Options |\n|---|---|---|")
       end
 
-      def scopes
-        file = Object.const_source_location(model.name)&.first
+      def scopes(of = model)
+        file = Object.const_source_location(of.name)&.first
         names = file ? File.read(file).scan(/^\s*scope :(\w+)/).flatten : []
         section("Scopes", names.map { |name| "- `#{name}`" })
+      end
+
+      # Single-table subclasses share this table and this page: each with what it declares of its own.
+      def subclasses
+        return if model.descendants.empty?
+
+        parts = model.descendants.sort_by(&:name).map do |subclass|
+          parent = subclass.superclass
+          own = [ associations(subclass, except: parent.reflect_on_all_associations),
+                  validations(subclass, except: parent.validators), scopes(subclass) ]
+          "#### #{subclass.name}\n\n`#{model.inheritance_column}` = `#{subclass.sti_name}`\n\n" +
+            own.map { |text| text.sub(/\A### /, "##### ") }.join("\n")
+        end
+        "### Subclasses\n\n#{parts.join("\n")}"
+      end
+
+      # PostgreSQL (test, production) rewrites a partial index's condition as
+      # "((status)::text = 'pending'::text)"; SQLite (development) keeps it as written.
+      # Both become "status = 'pending'", as in db/schema.rb.
+      def condition(where)
+        where.gsub(/::\w+(?: varying)?/, "").gsub(/\((\w+)\)/, '\1').sub(/\A\((.*)\)\z/, '\1')
       end
 
       def section(title, rows, header = nil)
@@ -114,9 +122,12 @@ module ModelDocs
       def association_target(association)
         return "`#{association.name}`" if association.polymorphic?
 
-        default_name = association.klass.name.demodulize.underscore
+        klass = ModelDocs.klass_of(association)
+        return "`#{association.name}` (**broken**: its class cannot be loaded)" if klass.nil?
+
+        default_name = klass.name.demodulize.underscore
         default_name = default_name.pluralize if association.collection?
-        link = model_link(association.klass, association.klass.name)
+        link = model_link(klass, klass.name)
         association.name.to_s == default_name ? link : "#{link} as `#{association.name}`"
       end
 
@@ -124,9 +135,10 @@ module ModelDocs
       # to the associated model's page; plain columns stay as code.
       def attribute_link(attribute)
         association = model.reflect_on_association(attribute)
-        return "`#{attribute}`" unless association && !association.polymorphic?
+        klass = association && !association.polymorphic? && ModelDocs.klass_of(association)
+        return "`#{attribute}`" unless klass
 
-        model_link(association.klass, "`#{attribute}`")
+        model_link(klass, "`#{attribute}`")
       end
 
       def describe(value)

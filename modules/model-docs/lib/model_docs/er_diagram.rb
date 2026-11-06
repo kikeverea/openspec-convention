@@ -69,7 +69,10 @@ module ModelDocs
       end
 
       def key_columns(model)
-        foreign_keys = drawn_belongs_tos(model).map { |association| association.foreign_key.to_s }
+        # Every belongs_to marks its column, polymorphic or not: only the relationship lines skip what
+        # cannot be drawn.
+        foreign_keys = [ model, *model.descendants ].flat_map { |klass| klass.reflect_on_all_associations(:belongs_to) }
+                                                    .map { |association| association.foreign_key.to_s }
         unique = model.connection.indexes(model.table_name).select { |index| index.unique && index.columns.size == 1 }.flat_map(&:columns)
         # By name, as in db/schema.rb: the database's own order depends on how it was built
         model.columns.sort_by(&:name).filter_map do |column|
