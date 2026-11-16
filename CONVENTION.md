@@ -92,6 +92,8 @@ A feature page holds only what's true of the shipped code. Everything else is wo
 - **Limitation**: a boundary of a built feature, something it doesn't do. A bullet on its feature page, in the last section. A capability that doesn't exist at all isn't a limitation of anything: it goes in Next, written in full.
 - **Bug**: something built is clearly wrong.
 - **Cleanup**: dead code, a stale column, an outdated comment; users see nothing wrong.
+
+  **Dead code is dead from the UI too.** Before removing code, a value or a column as unused, check every way a user can reach it, not only code that names it: views and forms, including those that build their options from a list (e.g. a menu looping over `Model.statuses`), and the parameters controllers accept.
 - **To decide**: something built may or may not be wrong; the user decides.
 
 When unsure which, pick one: the user re-sorts.

@@ -69,7 +69,7 @@ The rules live where an agent needs them: always-on rules in `CONVENTION.md`, st
 - Everything in English except what users see; labels in single quotes; domain terms in `AGENTS.md`.
 - Where things live (the table); diagrams are `.mmd` files that render; links resolve.
 - Documentation ships with the work: feature pages and their sections, changing a feature, model links, generated docs, architecture diagrams, runbooks.
-- Limitations and the backlog: the four kinds, bullet format, Working on, Next, titles, one description.
+- Limitations and the backlog: the four kinds, bullet format, Working on, Next, titles, one description; dead code is dead from the UI too.
 - Tests you touched; plain commits; files never committed.
 - Ask the user before changing the convention; other sessions only when the user asks.
 
