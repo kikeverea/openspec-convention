@@ -131,6 +131,7 @@ Each is a bullet starting with a short bold title, then a description. Bugs, cle
 
 - Before editing the backlog, read the board and bring in what people changed there (cards added, moved or edited), then write your change to both.
 - Each section of `docs/backlog.md` (Working on, Next, Bugs, Cleanups, To decide) is a column of the same name. Each item is a card in the same order, titled with the item's title (a Next line written in full uses its bold title), with the item's description as the card's description.
+- **Card ids.** When the board gives each card an id of its own (a key such as `INN-106`), the item carries it in backticks right after its bold title: ``- **Title.** `INN-106` Description`` (in Next, ``1. **Title** `INN-106` (…)``). The id is what pairs an item with its card, not the title: a renamed or translated card still finds its item. A new item gets its id as soon as its card is created; an item without one has no card yet.
 - Create a column the board is missing. **Never delete or rename a column**, even one the backlog doesn't have: it may belong to people using the board. Cards are mirrored both ways: an item that leaves the backlog has its card removed, and a card added on the board becomes an item.
 - When the two disagree and it isn't clear which is newer, ask the user.
 - If the board can't be reached, finish the local change anyway and tell the user the board is behind.
