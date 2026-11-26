@@ -101,6 +101,43 @@ class ConventionArchiveTest < Minitest::Test
     assert_includes read("docs/backlog.md"), "## Working on\n\nNothing in progress.\n\n## Next"
   end
 
+  # Only the line holding the link went, so a wrapped item left its first line behind (kik-balanga, 2026-11-26).
+  def test_removes_a_wrapped_item_whole
+    write "docs/backlog.md", <<~MD
+      ## Working on
+
+      - **Split payments at a table.** `INN-7` One tab per guest, each paid on its own, written in full
+        and wrapped: [split-tabs](../openspec/changes/split-tabs/)
+      - [A draft can outlive its table](#bugs): [split-tabs](../openspec/changes/split-tabs/)
+      - **Kitchen display.** `INN-9` Orders on a screen, also wrapped
+        onto a second line: [kitchen-display](../openspec/changes/kitchen-display/)
+
+      ## Next
+
+      1. **Printed menus** `INN-3` (later). A long line
+         that wraps.
+
+      ## Bugs
+
+      - **A draft can outlive its table.** `INN-5` Details that run
+        onto a second line. [Table service](../openspec/specs/table-service/implementation.md).
+      - **Deleting a record in use gives a 500.** Details.
+    MD
+    output, status = archive("split-tabs")
+    assert status.success?, output
+
+    backlog = read("docs/backlog.md")
+    refute_includes backlog, "split-tabs"
+    refute_includes backlog, "Split payments"
+    refute_includes backlog, "and wrapped"
+    refute_includes backlog, "onto a second line. [Table service]"
+    assert_includes backlog, "- **Kitchen display.** `INN-9` Orders on a screen, also wrapped\n  onto a second line: [kitchen-display]"
+    assert_includes backlog, "1. **Printed menus** `INN-3` (later). A long line\n   that wraps.\n"
+    assert_includes backlog, "- **Deleting a record in use gives a 500.** Details."
+    assert_includes output, %(removed the finished item "Split payments at a table")
+    assert_includes output, %(move these items' cards to 'Hecho')
+  end
+
   def test_refuses_an_unknown_change
     output, status = archive("nope")
     refute status.success?

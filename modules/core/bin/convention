@@ -194,8 +194,8 @@ module Convention
 
   # `bin/convention archive <change> [--skip-specs]`: runs `openspec archive`, then does the
   # steps that need no judgment, and lists the ones that do.
-  #   - Working on lines in docs/backlog.md that link the change are removed, and so are the
-  #     bugs and cleanups they name (the change fixed them).
+  #   - Working on items in docs/backlog.md that link the change are removed, wrapped lines and all, and so are
+  #     the bugs and cleanups they name (the change fixed them).
   #   - Links into the change follow it to openspec/changes/archive/<date>-<change>/; a link to
   #     its delta spec moves to the main spec it was merged into.
   #   - Links inside the moved change are rebased, since it now sits one folder deeper.
@@ -244,36 +244,54 @@ module Convention
          .reject { |name| copied.include?(name) }.sort
     end
 
-    # Removes the change's Working on lines, and the bugs and cleanups they name.
-    # Returns { limitations: [[title, link], ...], fixed: [title, ...] }.
+    # Removes the change's Working on items, and the bugs and cleanups they name. An item is its first line and the
+    # indented lines it wraps onto: removing only the line that holds the link left the rest of a wrapped item behind.
+    # Returns { limitations: [[title, link], ...], fixed: [title, ...], done: [title, ...] }; done is a Working on
+    # item written in full, with no limitation or bug to point to.
     def settle_backlog
-      settled = { limitations: [], fixed: [] }
+      settled = { limitations: [], fixed: [], done: [] }
       return settled unless File.exist?(BACKLOG)
 
       lines = File.readlines(BACKLOG)
-      section = nil
-      kept = lines.reject do |line|
-        section = Regexp.last_match(1) if line =~ /\A## (.+?)\s*\z/
-        next false unless section == "Working on" && line.include?("changes/#{@name}/")
+      blocks = backlog_blocks(lines).reject do |section, block, item|
+        next false unless item && section == "Working on" && block.join.include?("changes/#{@name}/")
 
-        if (item = line.match(/\A\s*[-*]\s+\[([^\]]+)\]\(([^)]+)\)/))
-          if item[2].match?(/\A#(bugs|cleanups)\z/)
-            settled[:fixed] << item[1]
+        if (link = block.first.match(/\A[-*]\s+\[([^\]]+)\]\(([^)]+)\)/))
+          if link[2].match?(/\A#(bugs|cleanups)\z/)
+            settled[:fixed] << link[1]
           else
-            settled[:limitations] << [ item[1], item[2] ]
+            settled[:limitations] << [ link[1], link[2] ]
           end
+        elsif (bold = block.first.match(/\A[-*]\s+\*\*(.+?)\.?\*\*/))
+          settled[:done] << bold[1]
         end
         true
       end
-      section = nil
-      kept = kept.reject do |line|
-        section = Regexp.last_match(1) if line =~ /\A## (.+?)\s*\z/
-        %w[Bugs Cleanups].include?(section) &&
-          settled[:fixed].any? { |title| line.match?(/\A\s*[-*]\s+\*\*#{Regexp.escape(title)}\.?\*\*/) }
+      blocks = blocks.reject do |section, block, item|
+        item && %w[Bugs Cleanups].include?(section) &&
+          settled[:fixed].any? { |title| block.first.match?(/\A[-*]\s+\*\*#{Regexp.escape(title)}\.?\*\*/) }
       end
-      kept = note_empty_working_on(kept)
+      kept = note_empty_working_on(blocks.flat_map { |_, block, _| block })
       File.write(BACKLOG, kept.join) unless kept == lines
       settled
+    end
+
+    # The backlog as [section, lines, item?] blocks: a heading, an item ("- " or "1. " at the margin) with the
+    # indented lines that continue it, or any other line on its own.
+    def backlog_blocks(lines)
+      section = nil
+      lines.each_with_object([]) do |line, blocks|
+        if line =~ /\A## (.+?)\s*\z/
+          section = Regexp.last_match(1)
+          blocks << [ section, [ line ], false ]
+        elsif line.match?(/\A(?:[-*]|\d+\.)\s+\S/)
+          blocks << [ section, [ line ], true ]
+        elsif line.match?(/\A\s+\S/) && blocks.last&.last
+          blocks.last[1] << line
+        else
+          blocks << [ section, [ line ], false ]
+        end
+      end
     end
 
     def note_empty_working_on(lines)
@@ -332,11 +350,16 @@ module Convention
       puts "\nArchived to #{@archived}/."
       puts "Removed the change's Working on lines from #{BACKLOG}." if settled.values.any?(&:any?)
       settled[:fixed].each { |title| puts "  removed the fixed bug or cleanup \"#{title}\"" }
+      settled[:done].each { |title| puts "  removed the finished item \"#{title}\"" }
       rewritten.each { |path| puts "  rewrote links in #{path}" }
 
       todo = []
       settled[:limitations].each do |title, link|
         todo << "Update or remove the limitation \"#{title}\" (#{link.sub(%r{\A(\.\./)+}, "")}): the change moved it."
+      end
+      done = settled[:fixed] + settled[:done] + settled[:limitations].map(&:first)
+      if done.any?
+        todo << "If AGENTS.md names an external board, move these items' cards to 'Hecho' with a summary and the commit hash: #{done.map { "\"#{_1}\"" }.join(", ")}."
       end
       uncopied.each do |name|
         todo << "#{@archived}/diagrams/#{name} has no copy in a feature's diagrams/: copy it if it shows how the feature now works, and link it from implementation.md."
