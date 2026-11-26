@@ -127,6 +127,14 @@ Each is a bullet starting with a short bold title, then a description. Bugs, cle
 - **One description.** A limitation lives on the page of the feature it mainly bounds. Bugs, cleanups and questions are described only in the backlog.
 - Questions about work not built yet belong to the change that builds it. Steps owed on production go in a runbook.
 
+**An external backlog is kept in sync.** When a project's `AGENTS.md` names an external backlog (a board in a tracker, and how to reach it), that board mirrors `docs/backlog.md`. Work that changes one changes the other in the same piece of work, including what `bin/convention archive` changes.
+
+- Before editing the backlog, read the board and bring in what people changed there (cards added, moved or edited), then write your change to both.
+- Each section of `docs/backlog.md` (Working on, Next, Bugs, Cleanups, To decide) is a column of the same name. Each item is a card in the same order, titled with the item's title (a Next line written in full uses its bold title), with the item's description as the card's description.
+- Create a column the board is missing. **Never delete or rename a column**, even one the backlog doesn't have: it may belong to people using the board. Cards are mirrored both ways: an item that leaves the backlog has its card removed, and a card added on the board becomes an item.
+- When the two disagree and it isn't clear which is newer, ask the user.
+- If the board can't be reached, finish the local change anyway and tell the user the board is behind.
+
 ## Tests
 
 Run the tests relevant to the work being done (the tests of the code you changed, and the ones you wrote), not the whole suite: the full suite runs only when the user asks. `AGENTS.md` gives the project's test commands.
